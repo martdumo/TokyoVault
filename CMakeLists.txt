@@ -34,7 +34,13 @@ include_directories(include)
 add_executable(MarkdownEditor
     src/main.cpp
     src/MainWindow.cpp
+    src/MarkdownHighlighter.cpp
+    src/MarkdownTextEdit.cpp
+    src/FindReplaceDialog.cpp
     include/MainWindow.h
+    include/MarkdownHighlighter.h
+    include/MarkdownTextEdit.h
+    include/FindReplaceDialog.h
     resources.qrc
 )
 
