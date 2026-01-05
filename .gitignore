@@ -1,0 +1,45 @@
+# --- IDEs y Editores ---
+.vs/
+*.user
+*.suo
+*.sln
+*.vcxproj
+*.filters
+*.db
+*.opendb
+.vscode/
+
+# --- Compilación (Muy importante) ---
+# Ignoramos todas las carpetas donde CMake genera archivos temporales y binarios
+build/
+out/
+CMakeFiles/
+CMakeSettings.json
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+
+# --- Binarios y Librerías ---
+*.exe
+*.dll
+*.lib
+*.pdb
+*.obj
+*.ilk
+*.exp
+
+# --- Qt (Archivos generados automáticamente) ---
+# Qt genera estos archivos a partir de tus .h y .qrc; no deben subirse
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+*.qmlc
+*.jsc
+
+# --- vcpkg ---
+# Las librerías que vcpkg instala para este proyecto pesan mucho
+vcpkg_installed/
+
+# --- Sistema ---
+Thumbs.db
+.DS_Store

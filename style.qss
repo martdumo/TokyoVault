@@ -1,0 +1,121 @@
+/*
+ * Tokyo Night Theme for Qt
+ * Palette:
+ *  - Background: #1a1b26
+ *  - Editor/Lists: #24283b
+ *  - Text: #a9b1d6
+ *  - Accents: #7aa2f7
+ *  - Comments: #565f89
+ */
+
+QWidget {
+    background-color: #1a1b26;
+    color: #a9b1d6;
+    font-family: "JetBrains Mono";
+    font-size: 10pt;
+}
+
+QMainWindow {
+    background-color: #1a1b26;
+}
+
+QTextEdit {
+    background-color: #24283b;
+    border: 1px solid #565f89;
+    color: #a9b1d6;
+    padding: 8px;
+}
+
+QTreeView {
+    background-color: #24283b;
+    border: 1px solid #565f89;
+    color: #a9b1d6;
+    outline: 0; /* Remove focus outline */
+}
+
+QTreeView::item {
+    padding: 4px;
+}
+
+QTreeView::item:selected {
+    background-color: #7aa2f7;
+    color: #1a1b26;
+}
+
+QTreeView::item:hover {
+    background-color: #565f89;
+}
+
+QHeaderView::section {
+    background-color: #1a1b26;
+    color: #a9b1d6;
+    padding: 4px;
+    border: 1px solid #565f89;
+}
+
+QToolBar {
+    background-color: #1a1b26;
+    border: none;
+    padding: 4px;
+}
+
+QToolButton {
+    background-color: #24283b;
+    color: #a9b1d6;
+    border: 1px solid #565f89;
+    padding: 6px;
+    margin: 2px;
+}
+
+QToolButton:hover {
+    background-color: #565f89;
+}
+
+QToolButton:pressed {
+    background-color: #7aa2f7;
+    color: #1a1b26;
+}
+
+QSplitter::handle {
+    background-color: #565f89;
+}
+
+QSplitter::handle:horizontal {
+    width: 1px;
+}
+
+QSplitter::handle:vertical {
+    height: 1px;
+}
+
+QScrollBar:vertical {
+    border: none;
+    background: #24283b;
+    width: 10px;
+    margin: 0px 0px 0px 0px;
+}
+
+QScrollBar::handle:vertical {
+    background: #565f89;
+    min-height: 20px;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    border: none;
+    background: #24283b;
+    height: 10px;
+    margin: 0px 0px 0px 0px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #565f89;
+    min-width: 20px;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
+}

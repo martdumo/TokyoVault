@@ -1,0 +1,6 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource prefix="/">
+    <file alias="style.qss">style.qss</file>
+    <file alias="fonts/JetBrainsMono-Regular.ttf">assets/fonts/JetBrainsMono-Regular.ttf</file>
+</qresource>
+</RCC>
