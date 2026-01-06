@@ -3,7 +3,9 @@
 #include <QSyntaxHighlighter>
 #include <QRegularExpression>
 #include <QTextCharFormat>
-#include <QVector>
+
+// Forward-declare para evitar dependencia circular con MainWindow.h
+struct Theme;
 
 class MarkdownHighlighter : public QSyntaxHighlighter
 {
@@ -11,20 +13,20 @@ class MarkdownHighlighter : public QSyntaxHighlighter
 
 public:
     explicit MarkdownHighlighter(QTextDocument *parent = nullptr);
+    void setTheme(const Theme &theme);
 
 protected:
     void highlightBlock(const QString &text) override;
 
 private:
-    struct HighlightingRule
-    {
-        QRegularExpression pattern;
-        QTextCharFormat format;
-    };
-    QVector<HighlightingRule> m_highlightingRules;
-
-    // Formato para bloques de código multi-línea
+    QTextCharFormat m_headerFormat;
+    QTextCharFormat m_linkFormat;
+    QTextCharFormat m_codeFormat;
+    QTextCharFormat m_boldFormat;
+    QTextCharFormat m_italicFormat;
+    QTextCharFormat m_quoteFormat;
     QTextCharFormat m_multiLineCodeFormat;
+
     QRegularExpression m_codeBlockStartExpression;
     QRegularExpression m_codeBlockEndExpression;
 };

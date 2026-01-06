@@ -2,9 +2,11 @@
 
 #include <QMainWindow>
 #include <QModelIndex>
-#include <QTextDocument> // Para QTextDocument::FindFlags
+#include <QTextDocument>
+#include <QColor>
+#include <QMap>
 
-// Forward declarations para reducir tiempos de compilación y dependencias en cabeceras.
+// Forward declarations to reduce compile times and header dependencies.
 class QSplitter;
 class QTreeView;
 class QFileSystemModel;
@@ -12,13 +14,34 @@ class QToolButton;
 class QLineEdit;
 class QStatusBar;
 class QLabel;
-class QSortFilterProxyModel; // Para el filtro del QTreeView
-class QCloseEvent; // Para el evento de cierre de ventana
+class QSortFilterProxyModel;
+class QCloseEvent;
+class QActionGroup;
+class QApplication;
 
-// Nuevas clases
-class MarkdownTextEdit; // Nuestro QTextEdit personalizado
-class MarkdownHighlighter; // Para el resaltado de sintaxis
-class FindReplaceDialog; // Diálogo de buscar y reemplazar
+// New classes
+class MarkdownTextEdit;
+class MarkdownHighlighter;
+class FindReplaceDialog;
+
+// Structure to define the colors of a theme
+struct Theme {
+    QString name;
+    // General UI colors
+    QColor windowBg;
+    QColor editorBg;
+    QColor textFg;
+    QColor mutedFg;
+    QColor accent;
+    // Highlighter colors
+    QColor heading;
+    QColor link;
+    QColor code;
+    QColor bold;
+    QColor italic;
+    QColor quoteBg;
+};
+
 
 class MainWindow : public QMainWindow
 {
@@ -29,83 +52,90 @@ public:
     ~MainWindow();
 
 protected:
-    void closeEvent(QCloseEvent *event) override; // Para guardar la configuración al cerrar
+    void closeEvent(QCloseEvent *event) override; // To save settings on close
 
 private slots:
-    // Slots de la barra de herramientas
+    // Toolbar slots
     void openVault(const QString &path = "");
     void toggleEditMode();
-    void historyBack();     // Navegar hacia atrás en el historial
-    void historyForward();  // Navegar hacia adelante en el historial
+    void historyBack();     // Navigate back in history
+    void historyForward();  // Navigate forward in history
 
-    // Slots del menú Archivo
+    // File menu slots
     void openFile();
     void saveFile();
     void closeVault();
 
-    // Slots del menú Editar
+    // Edit menu slots
     void showFindReplaceDialog();
     void findNextInEditor(const QString &text, QTextDocument::FindFlags flags);
     void replaceInEditor(const QString &findText, const QString &replaceText, QTextDocument::FindFlags flags);
     void replaceAllInEditor(const QString &findText, const QString &replaceText, QTextDocument::FindFlags flags);
 
-    // Slots del menú Insertar
+    // Insert menu slots
     void insertTableTemplate();
     void insertLinkTemplate();
     void insertImageTemplate();
 
-    // Slots de Formato (Shortcuts)
+    // Format slots (Shortcuts)
     void applyBold();
     void applyItalic();
     void applyUnderline();
 
-    // Slots de Configuración
+    // Customization slots
     void showFontDialog();
+    void applyTheme(const QString &themeName);
 
-    // Slots del QTreeView y Editor
+
+    // QTreeView and Editor slots
     void onFileClicked(const QModelIndex &index);
-    void updateStatusBar(); // Actualiza el conteo de palabras y la ruta.
-    void filterVault(const QString &text); // Para el QLineEdit de búsqueda
-    void handleWikiLinkActivated(const QString &linkName); // Gestiona el Ctrl+Click en wiki-links
-    void onDocumentModified(); // Se activa cuando el texto cambia
+    void updateStatusBar(); // Updates word count and path.
+    void filterVault(const QString &text); // For the search QLineEdit
+    void handleWikiLinkActivated(const QString &linkName); // Manages Ctrl+Click on wiki-links
+    void onDocumentModified(); // Activates when text changes
 
 private:
-    // --- Funciones de configuración ---
+    // --- Configuration functions ---
     void createMenus();
     void createToolBar();
     void createStatusBar();
     void setupUI();
+    void setupThemes(); // Loads theme definitions
     bool loadFile(const QString& filePath, bool addToHistory = true);
-    void saveSettings(); // Guarda la configuración (última vault, fuente)
-    void loadSettings(); // Carga la configuración
+    void saveSettings(); // Saves configuration (last vault, font)
+    void loadSettings(); // Loads configuration
     void applyTextFormatting(const QString& prefix, const QString& suffix = "");
-    bool maybeSave(); // Pregunta al usuario si quiere guardar los cambios
+    bool maybeSave(); // Asks the user if they want to save changes
 
-    // --- Widgets de la UI ---
+    // --- UI Widgets ---
     QSplitter *m_mainSplitter;
     QTreeView *m_treeView;
-    MarkdownTextEdit *m_textEdit; // Ahora usa nuestra clase personalizada
+    MarkdownTextEdit *m_textEdit;
     QToolButton *m_toggleButton;
-    QLineEdit *m_searchBar; // Nueva barra de búsqueda
-    QStatusBar *m_statusBar; // Nueva barra de estado
-    QLabel *m_filePathLabel; // Muestra la ruta del archivo actual
-    QLabel *m_wordCountLabel; // Muestra el conteo de palabras
+    QLineEdit *m_searchBar;
+    QStatusBar *m_statusBar;
+    QLabel *m_filePathLabel;
+    QLabel *m_wordCountLabel;
     QToolButton *m_historyBackButton;
     QToolButton *m_historyForwardButton;
 
-    // --- Modelos y estado ---
+    // --- Models and state ---
     QFileSystemModel *m_fileSystemModel;
-    QSortFilterProxyModel *m_proxyModel; // Para filtrar el QTreeView
-    MarkdownHighlighter *m_highlighter; // Resaltador de sintaxis
+    QSortFilterProxyModel *m_proxyModel;
+    MarkdownHighlighter *m_highlighter;
 
     QString m_currentFilePath;
-    QString m_currentVaultPath; // Ruta del vault activo
+    QString m_currentVaultPath;
     bool m_isEditMode;
 
-    // Historial de archivos abiertos
+    // History of open files
     QList<QString> m_fileHistory;
     int m_historyIndex;
 
-    // Diálogo de Buscar y Reemplazar
+    // Find and Replace Dialog
     FindReplaceDialog *m_findReplaceDialog;
+
+    // Theming System
+    QMap<QString, Theme> m_themes;
+    QString m_currentThemeName;
 };

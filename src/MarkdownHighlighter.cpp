@@ -1,4 +1,5 @@
 #include "MarkdownHighlighter.h"
+#include "MainWindow.h" // Para la estructura Theme
 
 #include <QTextDocument>
 #include <QBrush>
@@ -8,59 +9,87 @@
 MarkdownHighlighter::MarkdownHighlighter(QTextDocument *parent)
     : QSyntaxHighlighter(parent)
 {
-    // Formato para Títulos (Cyan y Negrita)
-    HighlightingRule rule;
-    QTextCharFormat headerFormat;
-    headerFormat.setForeground(QColor("#7dcfff")); // Cyan
-    headerFormat.setFontWeight(QFont::Bold);
-    // Expresión regular para títulos (Markdown: #, ##, ###...)
-    rule.pattern = QRegularExpression(R"(^#{1,6}\s.*)");
-    rule.format = headerFormat;
-    m_highlightingRules.append(rule);
-
-    // Formato para Links y WikiLinks (Púrpura)
-    QTextCharFormat linkFormat;
-    linkFormat.setForeground(QColor("#bb9af7")); // Púrpura
-    // Expresión regular para links [texto](url) y wiki-links [[texto]]
-    rule.pattern = QRegularExpression(R"(\[\[[^\]]+\]\]|\[[^\]]+\]\([^\)]+\))");
-    rule.format = linkFormat;
-    m_highlightingRules.append(rule);
-
-    // Formato para Código (Naranja)
-    QTextCharFormat codeFormat;
-    codeFormat.setForeground(QColor("#ff9e64")); // Naranja
-    // Expresión regular para bloques de código en línea (`)
-    rule.pattern = QRegularExpression(R"(`[^`]+`)");
-    rule.format = codeFormat;
-    m_highlightingRules.append(rule);
-
-    // Formato para Bloques de Código Multilínea
-    m_multiLineCodeFormat.setForeground(QColor("#ff9e64")); // Naranja
-    // Opcional: fondo ligeramente más oscuro para bloques de código
-    m_multiLineCodeFormat.setBackground(QColor("#2c3044")); // Un poco más oscuro que #24283b
-    m_multiLineCodeFormat.setFontFixedPitch(true); // Fuente monoespaciada para código
-
+    // Los formatos se inicializan con colores base, pero setTheme los sobrescribirá
+    m_headerFormat.setFontWeight(QFont::Bold);
+    m_boldFormat.setFontWeight(QFont::Bold);
+    m_italicFormat.setFontItalic(true);
+    m_multiLineCodeFormat.setFontFixedPitch(true);
+    
     // Delimitadores para bloques de código multilínea (```)
     m_codeBlockStartExpression = QRegularExpression(R"(^```)");
     m_codeBlockEndExpression = QRegularExpression(R"(^```$)");
 }
 
+void MarkdownHighlighter::setTheme(const Theme &theme)
+{
+    m_headerFormat.setForeground(theme.heading);
+    m_linkFormat.setForeground(theme.link);
+    m_codeFormat.setForeground(theme.code);
+    m_boldFormat.setForeground(theme.bold);
+    m_italicFormat.setForeground(theme.italic);
+    
+    m_quoteFormat.setBackground(theme.quoteBg);
+    m_quoteFormat.setForeground(theme.mutedFg);
+    
+    m_multiLineCodeFormat.setForeground(theme.code);
+    m_multiLineCodeFormat.setBackground(theme.editorBg.darker(110));
+
+    // Refresca todo el documento
+    rehighlight();
+}
+
+
 void MarkdownHighlighter::highlightBlock(const QString &text)
 {
-    // Primero, aplica las reglas de una sola línea
-    for (const HighlightingRule &rule : qAsConst(m_highlightingRules)) {
-        QRegularExpressionMatchIterator matchIterator = rule.pattern.globalMatch(text);
-        while (matchIterator.hasNext()) {
-            QRegularExpressionMatch match = matchIterator.next();
-            setFormat(match.capturedStart(), match.capturedLength(), rule.format);
-        }
+    // --- Reglas de una línea ---
+    // Títulos (#, ##, ...)
+    QRegularExpressionMatchIterator matchIterator = QRegularExpression(R"(^#{1,6}\s.*)").globalMatch(text);
+    while (matchIterator.hasNext()) {
+        QRegularExpressionMatch match = matchIterator.next();
+        setFormat(match.capturedStart(), match.capturedLength(), m_headerFormat);
+    }
+    
+    // Links ([texto](url) y [[wikilink]])
+    matchIterator = QRegularExpression(R"(\[\[[^\]]+\]\]|\[[^\]]+\]\([^\)]+\))").globalMatch(text);
+    while (matchIterator.hasNext()) {
+        QRegularExpressionMatch match = matchIterator.next();
+        setFormat(match.capturedStart(), match.capturedLength(), m_linkFormat);
     }
 
-    // Manejo de bloques de código multilínea
-    setCurrentBlockState(0); // Reinicia el estado del bloque
+    // Código en línea (`)
+    matchIterator = QRegularExpression(R"(`[^`]+`)").globalMatch(text);
+    while (matchIterator.hasNext()) {
+        QRegularExpressionMatch match = matchIterator.next();
+        setFormat(match.capturedStart(), match.capturedLength(), m_codeFormat);
+    }
+
+    // Negrita (**)
+    matchIterator = QRegularExpression(R"(\*\*[^\*]+\*\*)").globalMatch(text);
+    while (matchIterator.hasNext()) {
+        QRegularExpressionMatch match = matchIterator.next();
+        setFormat(match.capturedStart(), match.capturedLength(), m_boldFormat);
+    }
+
+    // Itálica (*)
+    matchIterator = QRegularExpression(R"(\*[^\*]+\*)").globalMatch(text);
+     while (matchIterator.hasNext()) {
+        QRegularExpressionMatch match = matchIterator.next();
+        setFormat(match.capturedStart(), match.capturedLength(), m_italicFormat);
+    }
+
+    // Citas (>)
+    matchIterator = QRegularExpression(R"(^>\s.*)").globalMatch(text);
+    while (matchIterator.hasNext()) {
+        QRegularExpressionMatch match = matchIterator.next();
+        setFormat(match.capturedStart(), match.capturedLength(), m_quoteFormat);
+    }
+
+
+    // --- Bloques de Código Multilínea ---
+    setCurrentBlockState(0);
 
     int startIndex = 0;
-    if (previousBlockState() != 1) { // Si el bloque anterior no terminó un bloque de código
+    if (previousBlockState() != 1) {
         startIndex = m_codeBlockStartExpression.match(text).capturedStart();
     }
 
@@ -69,10 +98,10 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
         int endIndex = match.capturedStart();
         int length = 0;
 
-        if (endIndex == -1) { // Si no se encuentra el fin del bloque de código en esta línea
-            setCurrentBlockState(1); // Marca el bloque como "dentro de un bloque de código"
+        if (endIndex == -1) {
+            setCurrentBlockState(1);
             length = text.length() - startIndex;
-        } else { // Se encontró el fin del bloque de código
+        } else {
             length = endIndex - startIndex + match.capturedLength();
         }
         setFormat(startIndex, length, m_multiLineCodeFormat);
