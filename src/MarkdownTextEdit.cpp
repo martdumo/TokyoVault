@@ -3,10 +3,29 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QDebug> // Para depuración
+#include <QWheelEvent>
+#include <QShortcut>
 
 MarkdownTextEdit::MarkdownTextEdit(QWidget *parent)
     : QTextEdit(parent)
 {
+    // Atajos para hacer zoom con el teclado
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Plus), this, SLOT(zoomIn()));
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus), this, SLOT(zoomOut()));
+}
+
+void MarkdownTextEdit::wheelEvent(QWheelEvent *event)
+{
+    if (event->modifiers() & Qt::ControlModifier) {
+        if (event->angleDelta().y() > 0) {
+            zoomIn();
+        } else {
+            zoomOut();
+        }
+        event->accept();
+    } else {
+        QTextEdit::wheelEvent(event);
+    }
 }
 
 void MarkdownTextEdit::mousePressEvent(QMouseEvent *event)

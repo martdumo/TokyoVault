@@ -52,27 +52,36 @@ MainWindow::~MainWindow()
 
 void MainWindow::createMenus()
 {
-    // --- Menú Archivo ---
+    // --- Menú Archivo (Reorganizado) ---
     QMenu *fileMenu = menuBar()->addMenu("&Archivo");
 
-    QAction *openAction = new QAction("&Abrir Vault...", this);
-    connect(openAction, &QAction::triggered, this, [this](){ openVault(); });
-    fileMenu->addAction(openAction);
+    QAction *openVaultAction = new QAction("Abrir &Vault (Carpeta)...", this);
+    connect(openVaultAction, &QAction::triggered, this, [this](){ openVault(); });
+    fileMenu->addAction(openVaultAction);
+
+    QAction *openFileAction = new QAction("Abrir &Archivo .md...", this);
+    connect(openFileAction, &QAction::triggered, this, &MainWindow::openFile);
+    fileMenu->addAction(openFileAction);
+    
+    fileMenu->addSeparator();
 
     QAction *saveAction = new QAction("&Guardar", this);
     saveAction->setShortcut(QKeySequence::Save);
     connect(saveAction, &QAction::triggered, this, &MainWindow::saveFile);
     fileMenu->addAction(saveAction);
-
+    
     fileMenu->addSeparator();
 
-    QAction *closeVaultAction = new QAction("&Cerrar Vault", this);
-    connect(closeVaultAction, &QAction::triggered, this, &MainWindow::closeVault);
-    fileMenu->addAction(closeVaultAction);
+    QAction *customizeAction = new QAction("&Personalizar...", this);
+    connect(customizeAction, &QAction::triggered, this, &MainWindow::showFontDialog);
+    fileMenu->addAction(customizeAction);
+
+    fileMenu->addSeparator();
 
     QAction *exitAction = new QAction("S&alir", this);
     connect(exitAction, &QAction::triggered, this, &MainWindow::close);
     fileMenu->addAction(exitAction);
+
 
     // --- Menú Editar ---
     QMenu *editMenu = menuBar()->addMenu("&Editar");
@@ -111,12 +120,6 @@ void MainWindow::createMenus()
     underlineAction->setShortcut(QKeySequence::Underline);
     connect(underlineAction, &QAction::triggered, this, &MainWindow::applyUnderline);
     formatMenu->addAction(underlineAction);
-
-    // --- Menú Configuración ---
-    QMenu *settingsMenu = menuBar()->addMenu("&Configuración");
-    QAction *fontAction = new QAction("Cambiar &Fuente...", this);
-    connect(fontAction, &QAction::triggered, this, &MainWindow::showFontDialog);
-    settingsMenu->addAction(fontAction);
 }
 
 void MainWindow::createToolBar()
@@ -173,7 +176,7 @@ void MainWindow::setupUI()
     leftLayout->addWidget(m_searchBar);
 
     m_fileSystemModel = new QFileSystemModel(this);
-    m_fileSystemModel->setFilter(QDir::NoDotAndDotDot | QDir::AllEntries);
+    m_fileSystemModel->setFilter(QDir::NoDotAndDotDot | QDir::AllDirs | QDir::Files);
     m_fileSystemModel->setNameFilters(QStringList() << "*.md");
     m_fileSystemModel->setNameFilterDisables(false);
 
@@ -213,6 +216,16 @@ void MainWindow::setupUI()
 
 // --- Lógica de Slots ---
 
+void MainWindow::openFile()
+{
+    if (maybeSave()) {
+        QString filePath = QFileDialog::getOpenFileName(this, "Abrir Archivo Markdown", m_currentVaultPath, "Markdown (*.md)");
+        if (!filePath.isEmpty()) {
+            loadFile(filePath);
+        }
+    }
+}
+
 void MainWindow::openVault(const QString &path)
 {
     QString dir = path;
@@ -225,6 +238,16 @@ void MainWindow::openVault(const QString &path)
         m_fileSystemModel->setRootPath(dir);
         QModelIndex rootIndex = m_proxyModel->mapFromSource(m_fileSystemModel->index(dir));
         m_treeView->setRootIndex(rootIndex);
+
+        // Cargar archivo de inicio si está configurado
+        QSettings settings("MySoft", "MarkdownEditor");
+        QString startupFile = settings.value("startup_file").toString();
+        if (!startupFile.isEmpty()) {
+            QString startupFilePath = m_currentVaultPath + "/" + startupFile;
+            if (QFile::exists(startupFilePath)) {
+                loadFile(startupFilePath);
+            }
+        }
     }
 }
 
@@ -275,7 +298,7 @@ bool MainWindow::loadFile(const QString& filePath, bool addToHistory)
         m_textEdit->setMarkdown(content);
     }
     
-    setWindowTitle(QFileInfo(filePath).fileName() + "[*]");
+    setWindowTitle(QFileInfo(filePath).fileName() + " - Markdown Editor [*]");
     m_textEdit->document()->setModified(false);
     updateStatusBar();
 

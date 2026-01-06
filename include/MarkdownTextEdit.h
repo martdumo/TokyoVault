@@ -16,5 +16,6 @@ signals:
     void wikiLinkActivated(const QString &linkName);
 
 protected:
+    void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
 };

@@ -39,6 +39,7 @@ private slots:
     void historyForward();  // Navegar hacia adelante en el historial
 
     // Slots del menú Archivo
+    void openFile();
     void saveFile();
     void closeVault();
 
