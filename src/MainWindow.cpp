@@ -184,7 +184,7 @@ void MainWindow::setupUI()
     leftLayout->setContentsMargins(0, 0, 0, 0);
 
     m_searchBar = new QLineEdit(this);
-    m_searchBar->setPlaceholderText("Buscar por contenido...");
+    m_searchBar->setPlaceholderText("Buscar por título o contenido...");
     connect(m_searchBar, &QLineEdit::textChanged, this, &MainWindow::filterVault);
     leftLayout->addWidget(m_searchBar);
 
@@ -277,7 +277,7 @@ void MainWindow::applyTheme(const QString &themeName)
         "QTreeView{background-color:%1;color:%3;border:none;}"
         "QLineEdit{background-color:%2;color:%3;border:1px solid %4;border-radius:4px;padding:4px;}"
         "QTextEdit{background-color:%2;color:%3;border:none;padding-left:25px;padding-top:10px;}"
-        "QTextEdit a{color:#7aa2f7;text-decoration:none;}"
+        "QTextEdit a{color:%5;text-decoration:underline;}"
         "QScrollBar:vertical{background:%1;width:10px;margin:0;}"
         "QScrollBar::handle:vertical{background:%4;min-height:20px;border-radius:5px;}"
     ).arg(theme.windowBg.name(), theme.editorBg.name(), theme.textFg.name(), theme.mutedFg.name(), theme.accent.name());
@@ -301,18 +301,23 @@ void MainWindow::newFile()
             QMessageBox::warning(this, "Archivo existente", "Un archivo con ese nombre ya existe.");
             return;
         }
+        if (!maybeSave()) {
+            return;
+        }
         if (!file.open(QIODevice::WriteOnly)) {
             QMessageBox::critical(this, "Error", "No se pudo crear el archivo.");
             return;
         }
         file.close();
-        if (maybeSave()) loadFile(newFilePath);
+        loadFile(newFilePath);
     }
 }
 
 void MainWindow::toggleEditMode()
 {
     m_isEditMode = !m_isEditMode;
+    bool wasModified = m_textEdit->document()->isModified();
+
     if (m_isEditMode) {
         m_toggleButton->setText("Preview Mode");
         m_textEdit->setReadOnly(false);
@@ -322,10 +327,16 @@ void MainWindow::toggleEditMode()
         m_toggleButton->setText("Edit Mode");
         m_rawMarkdownBuffer = m_textEdit->toPlainText();
         QString previewContent = m_rawMarkdownBuffer;
+        
+        // Force vertical spacing for paragraphs
+        previewContent.replace("\n\n", "\n&nbsp;\n");
+        // Convert wiki-links to standard markdown
         previewContent.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"([\1](\1.md))");
+        
         m_textEdit->setReadOnly(true);
         m_textEdit->setMarkdown(previewContent);
     }
+    m_textEdit->document()->setModified(wasModified);
 }
 
 void MainWindow::handleLinkNavigation(const QString &link) {
@@ -342,14 +353,15 @@ void MainWindow::handleLinkNavigation(const QString &link) {
     } else {
         auto reply = QMessageBox::question(this, "Crear archivo", "El archivo '" + fileInfo.fileName() + "' no existe.\n¿Quieres crearlo?", QMessageBox::Yes | QMessageBox::No);
         if (reply == QMessageBox::Yes) {
-            if (maybeSave()) {
-                QFile file(newFilePath);
-                if (file.open(QIODevice::WriteOnly)) {
-                    file.close();
-                    loadFile(newFilePath);
-                } else {
-                    QMessageBox::warning(this, "Error", "No se pudo crear el archivo.");
-                }
+            if (!maybeSave()) {
+                return; // Stop if user cancels saving current file
+            }
+            QFile file(newFilePath);
+            if (file.open(QIODevice::WriteOnly)) {
+                file.close();
+                loadFile(newFilePath);
+            } else {
+                QMessageBox::warning(this, "Error", "No se pudo crear el archivo.");
             }
         }
     }
@@ -360,7 +372,7 @@ void MainWindow::openFile() { if(maybeSave()){QString fp=QFileDialog::getOpenFil
 void MainWindow::openVault(const QString &path){QString d=path.isEmpty()?QFileDialog::getExistingDirectory(this,"Abrir Vault"):path;if(!d.isEmpty()){m_currentVaultPath=d;m_fileSystemModel->setRootPath(d);m_treeView->setRootIndex(m_proxyModel->mapFromSource(m_fileSystemModel->index(d)));}}
 void MainWindow::closeVault(){if(maybeSave()){m_currentVaultPath.clear();m_currentFilePath.clear();m_fileSystemModel->setRootPath("");m_textEdit->clear();m_rawMarkdownBuffer.clear();setWindowTitle("ME[*]");m_textEdit->document()->setModified(false);updateStatusBar();}}
 void MainWindow::onFileClicked(const QModelIndex &idx){if(!idx.isValid())return;auto sIdx=m_proxyModel->mapToSource(idx);QString fp=m_fileSystemModel->filePath(sIdx);if(m_fileSystemModel->isDir(sIdx)||fp.isEmpty())return;if(maybeSave())loadFile(fp);}
-bool MainWindow::loadFile(const QString& fp,bool addHist){QFile f(fp);if(!f.open(QIODevice::ReadOnly|QIODevice::Text))return false;m_currentFilePath=fp;QTextStream in(&f);m_rawMarkdownBuffer=in.readAll();m_textEdit->setPlainText(m_rawMarkdownBuffer);f.close();if(!m_isEditMode){m_isEditMode=true;m_toggleButton->setText("Preview");m_textEdit->setReadOnly(false);m_highlighter->rehighlight();}setWindowTitle(QFileInfo(fp).fileName()+" - ME[*]");m_textEdit->document()->setModified(false);updateStatusBar();if(addHist){if(m_historyIndex>=0&&m_historyIndex<m_fileHistory.size()-1)m_fileHistory=m_fileHistory.mid(0,m_historyIndex+1);if(m_fileHistory.isEmpty()||m_fileHistory.last()!=fp)m_fileHistory.append(fp);m_historyIndex=m_fileHistory.size()-1;}m_historyBackButton->setEnabled(m_historyIndex>0);m_historyForwardButton->setEnabled(m_historyIndex<m_fileHistory.size()-1);return true;}
+bool MainWindow::loadFile(const QString& fp,bool addHist){QFile f(fp);if(!f.open(QIODevice::ReadOnly|QIODevice::Text))return false;m_currentFilePath=fp;QTextStream in(&f);m_rawMarkdownBuffer=in.readAll();m_textEdit->setPlainText(m_rawMarkdownBuffer);f.close();if(!m_isEditMode){m_isEditMode=true;m_toggleButton->setText("Preview");m_textEdit->setReadOnly(false);m_highlighter->rehighlight();}m_textEdit->document()->setModified(false);setWindowTitle(QFileInfo(fp).fileName()+" - ME[*]");updateStatusBar();if(addHist){if(m_historyIndex>=0&&m_historyIndex<m_fileHistory.size()-1)m_fileHistory=m_fileHistory.mid(0,m_historyIndex+1);if(m_fileHistory.isEmpty()||m_fileHistory.last()!=fp)m_fileHistory.append(fp);m_historyIndex=m_fileHistory.size()-1;}m_historyBackButton->setEnabled(m_historyIndex>0);m_historyForwardButton->setEnabled(m_historyIndex<m_fileHistory.size()-1);return true;}
 void MainWindow::saveFile(){if(m_currentFilePath.isEmpty()){QString fp=QFileDialog::getSaveFileName(this,"Guardar",m_currentVaultPath,"*.md");if(fp.isEmpty())return;m_currentFilePath=fp;}QFile f(m_currentFilePath);if(!f.open(QIODevice::WriteOnly|QIODevice::Text))return;QTextStream out(&f);QString c=m_isEditMode?m_textEdit->toPlainText():m_rawMarkdownBuffer;out<<c;f.close();if(m_isEditMode)m_rawMarkdownBuffer=c;m_textEdit->document()->setModified(false);setWindowTitle(QFileInfo(m_currentFilePath).fileName()+" - ME[*]");}
 void MainWindow::onDocumentModified(){setWindowModified(m_textEdit->document()->isModified());}
 bool MainWindow::maybeSave(){if(!m_textEdit->document()->isModified())return true;auto r=QMessageBox::warning(this,"Guardar","Cambios sin guardar",QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel);if(r==QMessageBox::Save){saveFile();return!m_textEdit->document()->isModified();}if(r==QMessageBox::Cancel)return false;return true;}
@@ -370,7 +382,7 @@ void MainWindow::historyForward(){if(m_historyIndex<m_fileHistory.size()-1&&mayb
 void MainWindow::closeEvent(QCloseEvent *e){if(maybeSave()){saveSettings();e->accept();}else{e->ignore();}}
 void MainWindow::saveSettings(){QSettings s("MS","ME");s.beginGroup("MW");s.setValue("g",saveGeometry());s.setValue("s",saveState());s.endGroup();s.beginGroup("ED");s.setValue("f",m_textEdit->font());s.setValue("vp",m_currentVaultPath);s.setValue("th",m_currentThemeName);s.endGroup();}
 void MainWindow::loadSettings(){QSettings s("MS","ME");s.beginGroup("MW");restoreGeometry(s.value("g").toByteArray());restoreState(s.value("s").toByteArray());s.endGroup();s.beginGroup("ED");m_textEdit->setFont(s.value("f",QFont("JetBrains Mono")).value<QFont>());QString th=s.value("th","T Night").toString();applyTheme(th);QString lv=s.value("vp","").toString();if(!lv.isEmpty()&&QDir(lv).exists())openVault(lv);s.endGroup();}
-void MainWindow::setupThemes(){m_themes["T Night"]={"T Night","#1a1b26","#24283b","#a9b1d6","#565f89","#7aa2f7","#7dcfff","#bb9af7","#ff9e64","#c0caf5","#c0caf5","#2a2e42"};m_themes["Nord"]={"Nord","#2E3440","#3B4252","#D8DEE9","#4C566A","#88C0D0","#81A1C1","#B48EAD","#EBCB8B","#ECEFF4","#ECEFF4","#434C5E"};}
+void MainWindow::setupThemes(){m_themes["Tokyo Night"]={"Tokyo Night","#1a1b26","#24283b","#a9b1d6","#565f89","#7aa2f7","#7dcfff","#bb9af7","#ff9e64","#c0caf5","#c0caf5","#2a2e42"};m_themes["Nord"]={"Nord","#2E3440","#3B4252","#D8DEE9","#4C566A","#88C0D0","#81A1C1","#B48EAD","#EBCB8B","#ECEFF4","#ECEFF4","#434C5E"};}
 void MainWindow::insertTableTemplate(){}
 void MainWindow::insertLinkTemplate(){}
 void MainWindow::insertImageTemplate(){}
