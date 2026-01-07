@@ -5,8 +5,9 @@
 #include <QTextDocument>
 #include <QColor>
 #include <QMap>
+#include <QUrl>
 
-// Forward declarations to reduce compile times and header dependencies.
+// Forward declarations
 class QSplitter;
 class QTreeView;
 class QFileSystemModel;
@@ -18,30 +19,18 @@ class QSortFilterProxyModel;
 class QCloseEvent;
 class QActionGroup;
 class QApplication;
-
-// New classes
+class QThread;
+class QTimer;
 class MarkdownTextEdit;
 class MarkdownHighlighter;
 class FindReplaceDialog;
+class SearchWorker;
 
-// Structure to define the colors of a theme
 struct Theme {
     QString name;
-    // General UI colors
-    QColor windowBg;
-    QColor editorBg;
-    QColor textFg;
-    QColor mutedFg;
-    QColor accent;
-    // Highlighter colors
-    QColor heading;
-    QColor link;
-    QColor code;
-    QColor bold;
-    QColor italic;
-    QColor quoteBg;
+    QColor windowBg, editorBg, textFg, mutedFg, accent;
+    QColor heading, link, code, bold, italic, quoteBg;
 };
-
 
 class MainWindow : public QMainWindow
 {
@@ -52,62 +41,60 @@ public:
     ~MainWindow();
 
 protected:
-    void closeEvent(QCloseEvent *event) override; // To save settings on close
+    void closeEvent(QCloseEvent *event) override;
 
 private slots:
-    // Toolbar slots
+    // --- UI Actions ---
     void openVault(const QString &path = "");
     void toggleEditMode();
-    void historyBack();     // Navigate back in history
-    void historyForward();  // Navigate forward in history
-
-    // File menu slots
+    void historyBack();
+    void historyForward();
+    void newFile();
     void openFile();
     void saveFile();
     void closeVault();
-
-    // Edit menu slots
     void showFindReplaceDialog();
+    void showFontDialog();
+    void applyTheme(const QString &themeName);
+
+    // --- Search ---
+    void filterVault(); // Slot connected to search bar text changes, starts the debounce timer
+    void startContentSearch(); // Slot connected to timer, executes the search
+    void handleSearchResults(const QStringList &matchingFiles);
+
+    // --- State & Navigation ---
+    void onFileClicked(const QModelIndex &index);
+    void updateStatusBar();
+    void handleLinkNavigation(const QString &link);
+    void onDocumentModified();
+
+    // --- Find/Replace Dialog ---
     void findNextInEditor(const QString &text, QTextDocument::FindFlags flags);
     void replaceInEditor(const QString &findText, const QString &replaceText, QTextDocument::FindFlags flags);
     void replaceAllInEditor(const QString &findText, const QString &replaceText, QTextDocument::FindFlags flags);
-
-    // Insert menu slots
+    
+    // --- Formatting ---
     void insertTableTemplate();
     void insertLinkTemplate();
     void insertImageTemplate();
-
-    // Format slots (Shortcuts)
     void applyBold();
     void applyItalic();
     void applyUnderline();
 
-    // Customization slots
-    void showFontDialog();
-    void applyTheme(const QString &themeName);
-
-
-    // QTreeView and Editor slots
-    void onFileClicked(const QModelIndex &index);
-    void updateStatusBar(); // Updates word count and path.
-    void filterVault(const QString &text); // For the search QLineEdit
-    void handleWikiLinkActivated(const QString &linkName); // Manages Ctrl+Click on wiki-links
-    void onDocumentModified(); // Activates when text changes
-
 private:
-    // --- Configuration functions ---
     void createMenus();
     void createToolBar();
     void createStatusBar();
     void setupUI();
-    void setupThemes(); // Loads theme definitions
+    void setupThemes();
+    void setupSearchThread();
     bool loadFile(const QString& filePath, bool addToHistory = true);
-    void saveSettings(); // Saves configuration (last vault, font)
-    void loadSettings(); // Loads configuration
+    void saveSettings();
+    void loadSettings();
     void applyTextFormatting(const QString& prefix, const QString& suffix = "");
-    bool maybeSave(); // Asks the user if they want to save changes
+    bool maybeSave();
 
-    // --- UI Widgets ---
+    // UI Widgets
     QSplitter *m_mainSplitter;
     QTreeView *m_treeView;
     MarkdownTextEdit *m_textEdit;
@@ -119,7 +106,7 @@ private:
     QToolButton *m_historyBackButton;
     QToolButton *m_historyForwardButton;
 
-    // --- Models and state ---
+    // Models and state
     QFileSystemModel *m_fileSystemModel;
     QSortFilterProxyModel *m_proxyModel;
     MarkdownHighlighter *m_highlighter;
@@ -127,15 +114,22 @@ private:
     QString m_currentFilePath;
     QString m_currentVaultPath;
     bool m_isEditMode;
+    QString m_rawMarkdownBuffer;
 
-    // History of open files
+    // Search thread and debounce timer
+    QThread* m_searchThread;
+    SearchWorker* m_searchWorker;
+    QTimer* m_searchTimer;
+    QString m_lastSearchTerm;
+
+    // History
     QList<QString> m_fileHistory;
     int m_historyIndex;
 
-    // Find and Replace Dialog
+    // Dialogs
     FindReplaceDialog *m_findReplaceDialog;
 
-    // Theming System
+    // Theming
     QMap<QString, Theme> m_themes;
     QString m_currentThemeName;
 };

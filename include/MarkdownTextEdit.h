@@ -12,10 +12,11 @@ public:
     explicit MarkdownTextEdit(QWidget *parent = nullptr);
 
 signals:
-    // Emitida cuando se hace Ctrl+Click en un wiki-link [[...]]
+    // Emitida al hacer Ctrl+Click en un wiki-link [[...]] o al hacer clic normal en un link en modo preview.
     void wikiLinkActivated(const QString &linkName);
 
 protected:
     void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
 };

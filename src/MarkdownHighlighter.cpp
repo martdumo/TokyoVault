@@ -13,8 +13,11 @@ MarkdownHighlighter::MarkdownHighlighter(QTextDocument *parent)
     m_headerFormat.setFontWeight(QFont::Bold);
     m_boldFormat.setFontWeight(QFont::Bold);
     m_italicFormat.setFontItalic(true);
-    m_multiLineCodeFormat.setFontFixedPitch(true);
     
+    // Nueva fuente para el código
+    m_codeFormat.setFontFamilies({"JetBrains Mono", "Consolas", "monospace"});
+    m_multiLineCodeFormat.setFontFamilies({"JetBrains Mono", "Consolas", "monospace"});
+
     // Delimitadores para bloques de código multilínea (```)
     m_codeBlockStartExpression = QRegularExpression(R"(^```)");
     m_codeBlockEndExpression = QRegularExpression(R"(^```$)");
@@ -23,7 +26,8 @@ MarkdownHighlighter::MarkdownHighlighter(QTextDocument *parent)
 void MarkdownHighlighter::setTheme(const Theme &theme)
 {
     m_headerFormat.setForeground(theme.heading);
-    m_linkFormat.setForeground(theme.link);
+    // Usamos el color de acento para los links para mayor visibilidad
+    m_linkFormat.setForeground(theme.accent); 
     m_codeFormat.setForeground(theme.code);
     m_boldFormat.setForeground(theme.bold);
     m_italicFormat.setForeground(theme.italic);
