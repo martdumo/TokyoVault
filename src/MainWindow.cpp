@@ -54,6 +54,9 @@ MainWindow::MainWindow(QWidget *parent)
     setupUI();
     setupSearchThread();
 
+    // Add global shortcut for toggling edit/preview mode
+    new QShortcut(QKeySequence("Ctrl+E"), this, SLOT(toggleEditMode()));
+
     loadSettings();
 }
 
@@ -122,6 +125,8 @@ void MainWindow::createMenus()
     customizeMenu->addSeparator();
     QMenu *themesMenu = customizeMenu->addMenu("&Temas");
     QActionGroup *themeActionGroup = new QActionGroup(this);
+    
+    // The loop correctly populates the menu from the m_themes map
     for (const QString &themeName : m_themes.keys()) {
         QAction *action = new QAction(themeName, this);
         action->setCheckable(true);
@@ -327,10 +332,12 @@ void MainWindow::toggleEditMode()
         m_toggleButton->setText("Edit Mode");
         m_rawMarkdownBuffer = m_textEdit->toPlainText();
         QString previewContent = m_rawMarkdownBuffer;
+
+        // Final visual parity fix: Find any line that is empty or contains only whitespace
+        // and insert a non-breaking space. This forces Qt's renderer to draw the line.
+        previewContent.replace(QRegularExpression(R"(^(\s*)$)", QRegularExpression::MultilineOption), "&nbsp;");
         
-        // Force vertical spacing for paragraphs
-        previewContent.replace("\n\n", "\n&nbsp;\n");
-        // Convert wiki-links to standard markdown
+        // Convert wiki-links to standard markdown AFTER spacing adjustments.
         previewContent.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"([\1](\1.md))");
         
         m_textEdit->setReadOnly(true);
@@ -341,29 +348,61 @@ void MainWindow::toggleEditMode()
 
 void MainWindow::handleLinkNavigation(const QString &link) {
     QString finalLink = link.trimmed();
+    
+    // Handle external web links
     if (finalLink.contains("://")) {
         QDesktopServices::openUrl(QUrl(finalLink));
         return;
     }
+    
     if (m_currentVaultPath.isEmpty()) return;
-    QString newFilePath = finalLink.endsWith(".md") ? m_currentVaultPath + "/" + finalLink : m_currentVaultPath + "/" + finalLink + ".md";
+
+    // Construct the full path for the local markdown file
+    QString newFilePath = finalLink.endsWith(".md") 
+        ? m_currentVaultPath + "/" + finalLink 
+        : m_currentVaultPath + "/" + finalLink + ".md";
+    
     QFileInfo fileInfo(newFilePath);
-    if (fileInfo.exists()) {
-        if(maybeSave()) loadFile(newFilePath);
-    } else {
-        auto reply = QMessageBox::question(this, "Crear archivo", "El archivo '" + fileInfo.fileName() + "' no existe.\n¿Quieres crearlo?", QMessageBox::Yes | QMessageBox::No);
+
+    // If the file doesn't exist, ask the user if they want to create it.
+    if (!fileInfo.exists()) {
+        auto reply = QMessageBox::question(
+            this, 
+            "Crear archivo", 
+            "El archivo '" + fileInfo.fileName() + "' no existe.\n¿Quieres crearlo?", 
+            QMessageBox::Yes | QMessageBox::No
+        );
+
         if (reply == QMessageBox::Yes) {
+            // CRITICAL: First, ensure the current work is saved if needed.
             if (!maybeSave()) {
-                return; // Stop if user cancels saving current file
+                return; // Stop if user cancels saving the current file.
             }
+            
+            // ONLY if maybeSave() was successful, create the new file.
             QFile file(newFilePath);
             if (file.open(QIODevice::WriteOnly)) {
                 file.close();
-                loadFile(newFilePath);
+                loadFile(newFilePath); // Load the new, empty file.
             } else {
                 QMessageBox::warning(this, "Error", "No se pudo crear el archivo.");
             }
         }
+    } else {
+        // If the file exists, just try to save the current one and then load it.
+        if (maybeSave()) {
+            loadFile(newFilePath);
+        }
+    }
+}
+
+void MainWindow::showFontDialog()
+{
+    bool ok;
+    QFont font = QFontDialog::getFont(&ok, m_textEdit->font(), this, "Seleccionar Fuente");
+    if (ok) {
+        m_textEdit->setFont(font);
+        // The font will be saved via saveSettings() on close
     }
 }
 
@@ -381,8 +420,24 @@ void MainWindow::historyBack(){if(m_historyIndex>0&&maybeSave()){m_historyIndex-
 void MainWindow::historyForward(){if(m_historyIndex<m_fileHistory.size()-1&&maybeSave()){m_historyIndex++;loadFile(m_fileHistory[m_historyIndex],false);}}
 void MainWindow::closeEvent(QCloseEvent *e){if(maybeSave()){saveSettings();e->accept();}else{e->ignore();}}
 void MainWindow::saveSettings(){QSettings s("MS","ME");s.beginGroup("MW");s.setValue("g",saveGeometry());s.setValue("s",saveState());s.endGroup();s.beginGroup("ED");s.setValue("f",m_textEdit->font());s.setValue("vp",m_currentVaultPath);s.setValue("th",m_currentThemeName);s.endGroup();}
-void MainWindow::loadSettings(){QSettings s("MS","ME");s.beginGroup("MW");restoreGeometry(s.value("g").toByteArray());restoreState(s.value("s").toByteArray());s.endGroup();s.beginGroup("ED");m_textEdit->setFont(s.value("f",QFont("JetBrains Mono")).value<QFont>());QString th=s.value("th","T Night").toString();applyTheme(th);QString lv=s.value("vp","").toString();if(!lv.isEmpty()&&QDir(lv).exists())openVault(lv);s.endGroup();}
-void MainWindow::setupThemes(){m_themes["Tokyo Night"]={"Tokyo Night","#1a1b26","#24283b","#a9b1d6","#565f89","#7aa2f7","#7dcfff","#bb9af7","#ff9e64","#c0caf5","#c0caf5","#2a2e42"};m_themes["Nord"]={"Nord","#2E3440","#3B4252","#D8DEE9","#4C566A","#88C0D0","#81A1C1","#B48EAD","#EBCB8B","#ECEFF4","#ECEFF4","#434C5E"};}
+void MainWindow::loadSettings(){QSettings s("MS","ME");s.beginGroup("MW");restoreGeometry(s.value("g").toByteArray());restoreState(s.value("s").toByteArray());s.endGroup();s.beginGroup("ED");m_textEdit->setFont(s.value("f",QFont("JetBrains Mono")).value<QFont>());QString th=s.value("th","Tokyo Night").toString();applyTheme(th);QString lv=s.value("vp","").toString();if(!lv.isEmpty()&&QDir(lv).exists())openVault(lv);s.endGroup();}
+
+void MainWindow::setupThemes() {
+    m_themes.clear();
+    // 1. Tokyo Night (Dark)
+    m_themes["Tokyo Night"] = {"Tokyo Night", "#1a1b26", "#24283b", "#a9b1d6", "#565f89", "#7aa2f7", "#7dcfff", "#bb9af7", "#ff9e64", "#c0caf5", "#c0caf5", "#2a2e42"};
+    // 2. Nord (Dark)
+    m_themes["Nord"] = {"Nord", "#2E3440", "#3B4252", "#D8DEE9", "#4C566A", "#88C0D0", "#81A1C1", "#B48EAD", "#EBCB8B", "#ECEFF4", "#ECEFF4", "#434C5E"};
+    // 3. Catppuccin (Mocha)
+    m_themes["Catppuccin"] = {"Catppuccin", "#1e1e2e", "#181825", "#cdd6f4", "#585b70", "#89b4fa", "#94e2d5", "#cba6f7", "#fab387", "#bac2de", "#bac2de", "#313244"};
+    // 4. Gruvbox (Dark)
+    m_themes["Gruvbox"] = {"Gruvbox", "#282828", "#3c3836", "#ebdbb2", "#7c6f64", "#83a598", "#8ec07c", "#d3869b", "#fe8019", "#d5c4a1", "#d5c4a1", "#504945"};
+    // 5. One Dark
+    m_themes["One Dark"] = {"One Dark", "#282c34", "#21252b", "#abb2bf", "#5c6370", "#61afef", "#98c379", "#c678dd", "#e5c07b", "#e06c75", "#e06c75", "#3f4451"};
+    // 6. Light Mode
+    m_themes["Light Mode"] = {"Light Mode", "#ffffff", "#f8f9fa", "#212529", "#adb5bd", "#0d6efd", "#198754", "#6f42c1", "#fd7e14", "#dc3545", "#dc3545", "#e9ecef"};
+}
+
 void MainWindow::insertTableTemplate(){}
 void MainWindow::insertLinkTemplate(){}
 void MainWindow::insertImageTemplate(){}
@@ -390,7 +445,6 @@ void MainWindow::applyBold(){}
 void MainWindow::applyItalic(){}
 void MainWindow::applyUnderline(){}
 void MainWindow::applyTextFormatting(const QString&,const QString&){}
-void MainWindow::showFontDialog(){}
 void MainWindow::findNextInEditor(const QString&,QTextDocument::FindFlags){}
 void MainWindow::replaceInEditor(const QString&,const QString&,QTextDocument::FindFlags){}
 void MainWindow::replaceAllInEditor(const QString&,const QString&,QTextDocument::FindFlags){}
