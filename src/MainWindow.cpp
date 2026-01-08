@@ -146,6 +146,7 @@ void MainWindow::createMenus()
 void MainWindow::createToolBar()
 {
     QToolBar *toolbar = addToolBar("Main Toolbar");
+    toolbar->setObjectName("MainToolbar"); // Set object name to fix saveState warning
     toolbar->setMovable(false);
 
     QToolButton *newButton = new QToolButton(this);
@@ -339,7 +340,7 @@ void MainWindow::toggleEditMode()
         m_rawMarkdownBuffer = m_textEdit->toPlainText();
         QString content = m_rawMarkdownBuffer;
 
-        // --- Manual Markdown to HTML Conversion (v5.2) ---
+        // --- Manual Markdown to HTML Conversion (v5.3) ---
         // Provides absolute control over visual parity for whitespace and formatting.
 
         // 1. Escape basic HTML characters to prevent rendering them as tags.
@@ -349,8 +350,8 @@ void MainWindow::toggleEditMode()
 
         // 2. Apply simple Markdown formatting rules via Regex, in a safe order.
         // Using Raw String Literals R"(...)" to avoid escaping hell.
-        content.replace(QRegularExpression(R"(\ [^\ ]+\]\(([^)]+)\))"), R"(<a href="\2">\1</a>)");      // Standard links
-        content.replace(QRegularExpression(R"(\[\[([^\ ]+)\]\])"), R"(<a href="\1.md">\1</a>)");        // Wiki-links
+        content.replace(QRegularExpression(R"(\[([^\]]+)\]\(([^)]+)\))"), R"(<a href="\2">\1</a>)");      // Standard links
+        content.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"(<a href="\1.md">\1</a>)");        // Wiki-links
         content.replace(QRegularExpression(R"(\*\*(.*?)\*\*)"), R"(<b>\1</b>)");                         // Bold
         content.replace(QRegularExpression(R"((?<!\*)\*(.*?)\*(?!\*))"), R"(<i>\1</i>)"); // Italic (negative lookbehind/ahead)
         content.replace(QRegularExpression(R"(`(.*?)`)"), R"(<code>\1</code>)");                         // Code
