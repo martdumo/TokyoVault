@@ -349,8 +349,8 @@ void MainWindow::toggleEditMode()
 
         // 2. Apply simple Markdown formatting rules via Regex, in a safe order.
         // Using Raw String Literals R"(...)" to avoid escaping hell.
-        content.replace(QRegularExpression(R"(\[([^\]]+)\]\(([^)]+)\))"), R"(<a href="\2">\1</a>)");      // Standard links
-        content.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"(<a href="\1.md">\1</a>)");        // Wiki-links
+        content.replace(QRegularExpression(R"(\ [^\ ]+\]\(([^)]+)\))"), R"(<a href="\2">\1</a>)");      // Standard links
+        content.replace(QRegularExpression(R"(\[\[([^\ ]+)\]\])"), R"(<a href="\1.md">\1</a>)");        // Wiki-links
         content.replace(QRegularExpression(R"(\*\*(.*?)\*\*)"), R"(<b>\1</b>)");                         // Bold
         content.replace(QRegularExpression(R"((?<!\*)\*(.*?)\*(?!\*))"), R"(<i>\1</i>)"); // Italic (negative lookbehind/ahead)
         content.replace(QRegularExpression(R"(`(.*?)`)"), R"(<code>\1</code>)");                         // Code
