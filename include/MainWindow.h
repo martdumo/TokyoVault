@@ -56,6 +56,7 @@ private slots:
     void showFindReplaceDialog();
     void showFontDialog();
     void applyTheme(const QString &themeName);
+    void showHelpDialog(); // New slot for the help guide
 
     // --- Search ---
     void filterVault(); // Slot connected to search bar text changes, starts the debounce timer

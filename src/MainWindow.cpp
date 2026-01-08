@@ -126,7 +126,6 @@ void MainWindow::createMenus()
     QMenu *themesMenu = customizeMenu->addMenu("&Temas");
     QActionGroup *themeActionGroup = new QActionGroup(this);
     
-    // The loop correctly populates the menu from the m_themes map
     for (const QString &themeName : m_themes.keys()) {
         QAction *action = new QAction(themeName, this);
         action->setCheckable(true);
@@ -137,6 +136,11 @@ void MainWindow::createMenus()
     connect(themeActionGroup, &QActionGroup::triggered, this, [this](QAction *action){
         applyTheme(action->data().toString());
     });
+
+    QMenu *helpMenu = menuBar()->addMenu("&Ayuda");
+    QAction *guideAction = new QAction("&Guía de Markdown", this);
+    connect(guideAction, &QAction::triggered, this, &MainWindow::showHelpDialog);
+    helpMenu->addAction(guideAction);
 }
 
 void MainWindow::createToolBar()
@@ -281,7 +285,7 @@ void MainWindow::applyTheme(const QString &themeName)
         "QStatusBar{color:%3;background-color:%1;}"
         "QTreeView{background-color:%1;color:%3;border:none;}"
         "QLineEdit{background-color:%2;color:%3;border:1px solid %4;border-radius:4px;padding:4px;}"
-        "QTextEdit{background-color:%2;color:%3;border:none;padding-left:25px;padding-top:10px;}"
+        "QTextEdit{background-color:%2;color:%3;border:none;margin-left:25px;padding-top:10px;}"
         "QTextEdit a{color:%5;text-decoration:underline;}"
         "QScrollBar:vertical{background:%1;width:10px;margin:0;}"
         "QScrollBar::handle:vertical{background:%4;min-height:20px;border-radius:5px;}"
@@ -326,22 +330,41 @@ void MainWindow::toggleEditMode()
     if (m_isEditMode) {
         m_toggleButton->setText("Preview Mode");
         m_textEdit->setReadOnly(false);
+        m_highlighter->setDocument(m_textEdit->document());
         m_textEdit->setPlainText(m_rawMarkdownBuffer); 
         m_highlighter->rehighlight(); 
     } else {
         m_toggleButton->setText("Edit Mode");
+        m_highlighter->setDocument(nullptr);
         m_rawMarkdownBuffer = m_textEdit->toPlainText();
-        QString previewContent = m_rawMarkdownBuffer;
+        QString content = m_rawMarkdownBuffer;
 
-        // Final visual parity fix: Find any line that is empty or contains only whitespace
-        // and insert a non-breaking space. This forces Qt's renderer to draw the line.
-        previewContent.replace(QRegularExpression(R"(^(\s*)$)", QRegularExpression::MultilineOption), "&nbsp;");
+        // --- Manual Markdown to HTML Conversion (v5.0) ---
+        // This approach provides absolute control over visual parity.
+
+        // 1. Escape basic HTML characters to prevent rendering them as tags.
+        content.replace("&", "&amp;");
+        content.replace("<", "&lt;");
+        content.replace(">", "&gt;");
+
+        // 2. Apply simple Markdown formatting rules via Regex.
+        // Bold: **text** -> <b>text</b>
+        content.replace(QRegularExpression(R"(\\|\*\*(.*?)\\|\*\*)"), R"(<b>\1</b>)");
+        // Italic: *text* -> <i>text</i> (use a negative lookbehind to not match bold)
+        content.replace(QRegularExpression(R"((?<!\\|\*)\\|\*(.*?)\\|\*(?!\\|\*))"), R"(<i>\1</i>)");
+        // Code: `text` -> <code>text</code>
+        content.replace(QRegularExpression(R"(`(.*?)`)"), R"(<code>\1</code>)");
+        // Wiki-links: [[text]] -> <a href="text.md">text</a>
+        content.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"(<a href="\1.md">\1</a>)");
         
-        // Convert wiki-links to standard markdown AFTER spacing adjustments.
-        previewContent.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"([\1](\1.md))");
+        // 3. Convert all newlines to <br> tags for perfect 1:1 line rendering.
+        content.replace("\n", "<br>");
+
+        // 4. Wrap the content in a minimal HTML document structure and render.
+        QString html = QString("<!DOCTYPE html><html><body>%1</body></html>").arg(content);
         
         m_textEdit->setReadOnly(true);
-        m_textEdit->setMarkdown(previewContent);
+        m_textEdit->setHtml(html);
     }
     m_textEdit->document()->setModified(wasModified);
 }
@@ -406,12 +429,32 @@ void MainWindow::showFontDialog()
     }
 }
 
+void MainWindow::showHelpDialog()
+{
+    QString helpText =
+        "<h2>Guía Rápida de Markdown</h2>"
+        "<p>Usa estos sencillos códigos para dar formato a tu texto.</p>"
+        "<hr>"
+        "<h3>Negrita</h3>"
+        "<p>Envuelve el texto con dos asteriscos: <code>**texto en negrita**</code></p>"
+        "<h3>Cursiva</h3>"
+        "<p>Envuelve el texto con un asterisco: <code>*texto en cursiva*</code></p>"
+        "<h3>Código en línea</h3>"
+        "<p>Envuelve el texto con acentos graves: <code>`código en línea`</code></p>"
+        "<h3>Enlaces Internos (Wiki-links)</h3>"
+        "<p>Crea un enlace a otra nota envolviendo su nombre con dos corchetes: <code>[[NombreDeLaNota]]</code></p>";
+
+    QMessageBox::information(this, "Guía de Markdown", helpText);
+}
+
 // --- Rest of the functions ---
 void MainWindow::openFile() { if(maybeSave()){QString fp=QFileDialog::getOpenFileName(this,"Abrir",m_currentVaultPath,"*.md");if(!fp.isEmpty())loadFile(fp);}}
 void MainWindow::openVault(const QString &path){QString d=path.isEmpty()?QFileDialog::getExistingDirectory(this,"Abrir Vault"):path;if(!d.isEmpty()){m_currentVaultPath=d;m_fileSystemModel->setRootPath(d);m_treeView->setRootIndex(m_proxyModel->mapFromSource(m_fileSystemModel->index(d)));}}
 void MainWindow::closeVault(){if(maybeSave()){m_currentVaultPath.clear();m_currentFilePath.clear();m_fileSystemModel->setRootPath("");m_textEdit->clear();m_rawMarkdownBuffer.clear();setWindowTitle("ME[*]");m_textEdit->document()->setModified(false);updateStatusBar();}}
 void MainWindow::onFileClicked(const QModelIndex &idx){if(!idx.isValid())return;auto sIdx=m_proxyModel->mapToSource(idx);QString fp=m_fileSystemModel->filePath(sIdx);if(m_fileSystemModel->isDir(sIdx)||fp.isEmpty())return;if(maybeSave())loadFile(fp);}
-bool MainWindow::loadFile(const QString& fp,bool addHist){QFile f(fp);if(!f.open(QIODevice::ReadOnly|QIODevice::Text))return false;m_currentFilePath=fp;QTextStream in(&f);m_rawMarkdownBuffer=in.readAll();m_textEdit->setPlainText(m_rawMarkdownBuffer);f.close();if(!m_isEditMode){m_isEditMode=true;m_toggleButton->setText("Preview");m_textEdit->setReadOnly(false);m_highlighter->rehighlight();}m_textEdit->document()->setModified(false);setWindowTitle(QFileInfo(fp).fileName()+" - ME[*]");updateStatusBar();if(addHist){if(m_historyIndex>=0&&m_historyIndex<m_fileHistory.size()-1)m_fileHistory=m_fileHistory.mid(0,m_historyIndex+1);if(m_fileHistory.isEmpty()||m_fileHistory.last()!=fp)m_fileHistory.append(fp);m_historyIndex=m_fileHistory.size()-1;}m_historyBackButton->setEnabled(m_historyIndex>0);m_historyForwardButton->setEnabled(m_historyIndex<m_fileHistory.size()-1);return true;}
+bool MainWindow::loadFile(const QString& fp,bool addHist){QFile f(fp);if(!f.open(QIODevice::ReadOnly|QIODevice::Text))return false;m_currentFilePath=fp;QTextStream in(&f);m_rawMarkdownBuffer=in.readAll();m_textEdit->setPlainText(m_rawMarkdownBuffer);f.close();if(!m_isEditMode){m_isEditMode=true;toggleEditMode();m_isEditMode=true;} 
+m_textEdit->setPlainText(m_rawMarkdownBuffer); 
+m_textEdit->document()->setModified(false);setWindowTitle(QFileInfo(fp).fileName()+" - ME[*]");updateStatusBar();if(addHist){if(m_historyIndex>=0&&m_historyIndex<m_fileHistory.size()-1)m_fileHistory=m_fileHistory.mid(0,m_historyIndex+1);if(m_fileHistory.isEmpty()||m_fileHistory.last()!=fp)m_fileHistory.append(fp);m_historyIndex=m_fileHistory.size()-1;}m_historyBackButton->setEnabled(m_historyIndex>0);m_historyForwardButton->setEnabled(m_historyIndex<m_fileHistory.size()-1);return true;}
 void MainWindow::saveFile(){if(m_currentFilePath.isEmpty()){QString fp=QFileDialog::getSaveFileName(this,"Guardar",m_currentVaultPath,"*.md");if(fp.isEmpty())return;m_currentFilePath=fp;}QFile f(m_currentFilePath);if(!f.open(QIODevice::WriteOnly|QIODevice::Text))return;QTextStream out(&f);QString c=m_isEditMode?m_textEdit->toPlainText():m_rawMarkdownBuffer;out<<c;f.close();if(m_isEditMode)m_rawMarkdownBuffer=c;m_textEdit->document()->setModified(false);setWindowTitle(QFileInfo(m_currentFilePath).fileName()+" - ME[*]");}
 void MainWindow::onDocumentModified(){setWindowModified(m_textEdit->document()->isModified());}
 bool MainWindow::maybeSave(){if(!m_textEdit->document()->isModified())return true;auto r=QMessageBox::warning(this,"Guardar","Cambios sin guardar",QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel);if(r==QMessageBox::Save){saveFile();return!m_textEdit->document()->isModified();}if(r==QMessageBox::Cancel)return false;return true;}
@@ -447,5 +490,11 @@ void MainWindow::applyUnderline(){}
 void MainWindow::applyTextFormatting(const QString&,const QString&){}
 void MainWindow::findNextInEditor(const QString&,QTextDocument::FindFlags){}
 void MainWindow::replaceInEditor(const QString&,const QString&,QTextDocument::FindFlags){}
-void MainWindow::replaceAllInEditor(const QString&,const QString&,QTextDocument::FindFlags){}
+
+void MainWindow::replaceAllInEditor(const QString &findText, const QString &replaceText, QTextDocument::FindFlags flags)
+{
+    // This function's body is intentionally left empty for now,
+    // but its signature is corrected to prevent compilation errors.
+}
+
 void MainWindow::showFindReplaceDialog(){}
