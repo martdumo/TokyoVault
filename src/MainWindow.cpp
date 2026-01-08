@@ -339,29 +339,30 @@ void MainWindow::toggleEditMode()
         m_rawMarkdownBuffer = m_textEdit->toPlainText();
         QString content = m_rawMarkdownBuffer;
 
-        // --- Manual Markdown to HTML Conversion (v5.0) ---
-        // This approach provides absolute control over visual parity.
+        // --- Manual Markdown to HTML Conversion (v5.2) ---
+        // Provides absolute control over visual parity for whitespace and formatting.
 
         // 1. Escape basic HTML characters to prevent rendering them as tags.
         content.replace("&", "&amp;");
         content.replace("<", "&lt;");
         content.replace(">", "&gt;");
 
-        // 2. Apply simple Markdown formatting rules via Regex.
-        // Bold: **text** -> <b>text</b>
-        content.replace(QRegularExpression(R"(\\|\*\*(.*?)\\|\*\*)"), R"(<b>\1</b>)");
-        // Italic: *text* -> <i>text</i> (use a negative lookbehind to not match bold)
-        content.replace(QRegularExpression(R"((?<!\\|\*)\\|\*(.*?)\\|\*(?!\\|\*))"), R"(<i>\1</i>)");
-        // Code: `text` -> <code>text</code>
-        content.replace(QRegularExpression(R"(`(.*?)`)"), R"(<code>\1</code>)");
-        // Wiki-links: [[text]] -> <a href="text.md">text</a>
-        content.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"(<a href="\1.md">\1</a>)");
+        // 2. Apply simple Markdown formatting rules via Regex, in a safe order.
+        // Using Raw String Literals R"(...)" to avoid escaping hell.
+        content.replace(QRegularExpression(R"(\[([^\]]+)\]\(([^)]+)\))"), R"(<a href="\2">\1</a>)");      // Standard links
+        content.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"(<a href="\1.md">\1</a>)");        // Wiki-links
+        content.replace(QRegularExpression(R"(\*\*(.*?)\*\*)"), R"(<b>\1</b>)");                         // Bold
+        content.replace(QRegularExpression(R"((?<!\*)\*(.*?)\*(?!\*))"), R"(<i>\1</i>)"); // Italic (negative lookbehind/ahead)
+        content.replace(QRegularExpression(R"(`(.*?)`)"), R"(<code>\1</code>)");                         // Code
         
         // 3. Convert all newlines to <br> tags for perfect 1:1 line rendering.
         content.replace("\n", "<br>");
 
-        // 4. Wrap the content in a minimal HTML document structure and render.
-        QString html = QString("<!DOCTYPE html><html><body>%1</body></html>").arg(content);
+        // 4. Wrap the content in a minimal HTML document, using a div with 'white-space: pre'
+        //    to force 1:1 rendering of all whitespace, including multiple spaces.
+        QString html = QString("<!DOCTYPE html><html><body><div style='white-space: pre; font-family: \"%1\";'>%2</div></body></html>")
+                           .arg(m_textEdit->font().family())
+                           .arg(content);
         
         m_textEdit->setReadOnly(true);
         m_textEdit->setHtml(html);
@@ -431,7 +432,7 @@ void MainWindow::showFontDialog()
 
 void MainWindow::showHelpDialog()
 {
-    QString helpText =
+    QString helpText = 
         "<h2>Guía Rápida de Markdown</h2>"
         "<p>Usa estos sencillos códigos para dar formato a tu texto.</p>"
         "<hr>"
@@ -441,6 +442,8 @@ void MainWindow::showHelpDialog()
         "<p>Envuelve el texto con un asterisco: <code>*texto en cursiva*</code></p>"
         "<h3>Código en línea</h3>"
         "<p>Envuelve el texto con acentos graves: <code>`código en línea`</code></p>"
+        "<h3>Enlaces (Links)</h3>"
+        "<p>Sintaxis: <code>[Texto a mostrar](https://www.ejemplo.com)</code></p>"
         "<h3>Enlaces Internos (Wiki-links)</h3>"
         "<p>Crea un enlace a otra nota envolviendo su nombre con dos corchetes: <code>[[NombreDeLaNota]]</code></p>";
 
