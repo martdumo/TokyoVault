@@ -14,8 +14,16 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # --- Configuración Específica del Entorno ---
-set(CMAKE_TOOLCHAIN_FILE "F:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
-set(CMAKE_PREFIX_PATH "F:/Qt/6.10.1/msvc2022_64" CACHE PATH "Qt installation directory")
+if(WIN32)
+    # En Windows, especificamos la ruta a vcpkg y Qt.
+    # Asegúrate de que estas rutas coincidan con tu sistema.
+    set(CMAKE_TOOLCHAIN_FILE "F:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
+    set(CMAKE_PREFIX_PATH "F:/Qt/6.10.1/msvc2022_64" CACHE PATH "Qt installation directory")
+else()
+    # En otros sistemas (como Linux), dejamos que CMake busque Qt en las rutas estándar.
+    # No es necesario especificar CMAKE_PREFIX_PATH si Qt está instalado a través del 
+    # gestor de paquetes del sistema (por ejemplo, pacman, apt).
+endif()
 
 # Busca el paquete de Qt6.
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Core)
