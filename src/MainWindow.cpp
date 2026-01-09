@@ -260,7 +260,7 @@ void MainWindow::onTreeContextMenu(const QPoint &pos)
         return;
     }
 
-                QMenu contextMenu(this);
+    QMenu contextMenu(this);
 
     // Add option to create folder
     QAction *createFolderAction = contextMenu.addAction("Crear Carpeta");
@@ -375,9 +375,13 @@ void MainWindow::deleteFileOrFolder()
     if (!sourceIndex.isValid()) return;
 
     QString filePath = m_fileSystemModel->filePath(sourceIndex);
-    QFileInfo fileInfo(filePath);
+    QString nativePath = QDir::toNativeSeparators(filePath);
+    QFileInfo fileInfo(nativePath);
 
     if (!fileInfo.exists()) return;
+
+    QString currentOpenFile = QDir::toNativeSeparators(m_currentFilePath);
+    bool deletingCurrentContainer = fileInfo.isDir() && currentOpenFile.startsWith(nativePath);
 
     QMessageBox::StandardButton reply;
     if (fileInfo.isDir()) {
@@ -393,16 +397,19 @@ void MainWindow::deleteFileOrFolder()
     if (reply == QMessageBox::Yes) {
         bool success = false;
         if (fileInfo.isDir()) {
-            QDir dir(filePath);
+            QDir dir(nativePath);
             success = dir.removeRecursively();
         } else {
-            success = QFile::remove(filePath);
+            success = QFile::remove(nativePath);
         }
 
-        if (!success) {
+        if (success) {
+            if (deletingCurrentContainer || nativePath == currentOpenFile) {
+                closeVault();
+            }
+        } else {
             QMessageBox::warning(this, "Error", "No se pudo eliminar el archivo o carpeta.");
         }
-        // No need to refresh the model, it should update automatically.
     }
 }
 
@@ -477,7 +484,7 @@ void MainWindow::handleSearchResults(const QStringList &matchingFiles)
     if (m_lastSearchTerm.isEmpty()) {
         m_proxyModel->setFilterRegularExpression("");
     } else if (matchingFiles.isEmpty()) {
-        m_proxyModel->setFilterRegularExpression(QString("$. "));
+        m_proxyModel->setFilterRegularExpression(QString("$."));
     } else {
         QStringList fileNames;
         for (const QString &path : matchingFiles) {
@@ -567,37 +574,41 @@ void MainWindow::toggleEditMode()
         
         Theme currentTheme = m_themes[m_currentThemeName];
 
-        // 1. Escapar caracteres HTML básicos
+        // 1. Escape basic HTML characters
         content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 
-        // 2. Títulos (Headers)
+        // 2. Process block elements
+        content.replace(QRegularExpression(R"(^>\s+(.*)$)", QRegularExpression::MultilineOption), R"(<blockquote>\1</blockquote>)");
+        content.replace(QRegularExpression(R"(^(\s*-\s*){3,}|^\s*(\*
+*){3,}$)", QRegularExpression::MultilineOption), "<hr>");
         content.replace(QRegularExpression(R"(^#\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h1>\1</h1>)");
         content.replace(QRegularExpression(R"(^##\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h2>\1</h2>)");
         content.replace(QRegularExpression(R"(^###\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h3>\1</h3>)");
 
-        // 3. Inline Elements - Clean HTML with back-references. Styling is in the CSS block.
+        // 3. Process inline elements
         content.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"(<a href="\1.md">\1</a>)");
         content.replace(QRegularExpression(R"(\[([^\]]+)\]\(([^)]+)\))"), R"(<a href="\2">\1</a>)");
         content.replace(QRegularExpression(R"(\*\*(.*?)\*\*)"), R"(<b>\1</b>)");
-        content.replace(QRegularExpression(R"(\*(.*?)\*)"), R"(<i>\1</i>)");
-        content.replace(QRegularExpression(R"(\`(.*?)\`)"), R"(<code>\1</code>)");
+        content.replace(QRegularExpression(R"(\* (.*?)\*)"), R"(<i>\1</i>)");
+        content.replace(QRegularExpression(R"(`(.*?)`)"), R"(<code>\1</code>)");
         
-        // 4. Wrap in HTML with dynamic CSS for visual parity.
+        // 4. Wrap in HTML with dynamic, centralized CSS
         QString html = QString(
             "<!DOCTYPE html><html><head><style>"
             "body { white-space: pre-wrap; font-family: '%1'; background-color: %2; color: %3; }"
             "h1, h2, h3, h4, h5, h6 { color: %4; }"
             "a { color: %5; text-decoration: underline; }"
+            "blockquote { border-left: 4px solid %5; padding-left: 10px; margin-left: 0; font-style: italic; color: %3; }"
             "code { background-color: %6; color: %7; padding: 2px 4px; border-radius: 3px; }"
             "pre { background-color: %6; color: %7; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre; }"
-            "hr { border: 0; border-top: 1px solid %4; }"
+            "hr { border: 0; border-top: 1px solid %4; margin: 1em 0; }"
             "img { max-width: 100%; }"
             "</style></head><body>%8</body></html>"
         ).arg(m_textEdit->font().family())      // %1: Font Family
          .arg(currentTheme.windowBg.name())    // %2: Body Background
          .arg(currentTheme.textFg.name())      // %3: Body Text
          .arg(currentTheme.heading.name())     // %4: Headings
-         .arg(currentTheme.accent.name())      // %5: Links
+         .arg(currentTheme.accent.name())      // %5: Links & Blockquote Border
          .arg(currentTheme.quoteBg.name())     // %6: Code Background
          .arg(currentTheme.code.name())        // %7: Code Text
          .arg(content);                        // %8: The clean content, processed last
