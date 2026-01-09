@@ -260,7 +260,7 @@ void MainWindow::onTreeContextMenu(const QPoint &pos)
         return;
     }
 
-    QMenu contextMenu(this);
+                QMenu contextMenu(this);
 
     // Add option to create folder
     QAction *createFolderAction = contextMenu.addAction("Crear Carpeta");
@@ -374,8 +374,8 @@ void MainWindow::deleteFileOrFolder()
     QModelIndex sourceIndex = m_proxyModel->mapToSource(currentIndex);
     if (!sourceIndex.isValid()) return;
 
-    QString currentPath = m_fileSystemModel->filePath(sourceIndex);
-    QFileInfo fileInfo(currentPath);
+    QString filePath = m_fileSystemModel->filePath(sourceIndex);
+    QFileInfo fileInfo(filePath);
 
     if (!fileInfo.exists()) return;
 
@@ -393,17 +393,16 @@ void MainWindow::deleteFileOrFolder()
     if (reply == QMessageBox::Yes) {
         bool success = false;
         if (fileInfo.isDir()) {
-            QDir dir(currentPath);
+            QDir dir(filePath);
             success = dir.removeRecursively();
         } else {
-            success = QFile::remove(currentPath);
+            success = QFile::remove(filePath);
         }
 
-        if (success) {
-            m_fileSystemModel->setRootPath(m_currentVaultPath);
-        } else {
+        if (!success) {
             QMessageBox::warning(this, "Error", "No se pudo eliminar el archivo o carpeta.");
         }
+        // No need to refresh the model, it should update automatically.
     }
 }
 
@@ -425,7 +424,7 @@ void MainWindow::updateLinksAfterRename(const QString &oldName, const QString &n
         QString updatedContent = content;
 
         // Replace [[oldName]] with [[newName]]
-        updatedContent.replace("[[" + oldName + "]]]", "[[" + newName + "]]");
+        updatedContent.replace("[[" + oldName + "]]", "[[" + newName + "]]");
         updatedContent.replace("[[" + oldName + ".md]]", "[[" + newName + ".md]]");
 
         // Write back the updated content
@@ -513,6 +512,12 @@ void MainWindow::applyTheme(const QString &themeName)
     ).arg(theme.windowBg.name(), theme.editorBg.name(), theme.textFg.name(), theme.mutedFg.name(), theme.accent.name());
     qApp->setStyleSheet(styleSheet);
     m_highlighter->setTheme(theme);
+
+    // If in preview mode, re-render with new theme colors
+    if (!m_isEditMode) {
+        toggleEditMode(); // This will switch to edit mode
+        toggleEditMode(); // This will switch back to preview mode, regenerating HTML with new colors
+    }
 }
 
 void MainWindow::newFile()
@@ -559,52 +564,43 @@ void MainWindow::toggleEditMode()
         m_highlighter->setDocument(nullptr);
         m_rawMarkdownBuffer = m_textEdit->toPlainText();
         QString content = m_rawMarkdownBuffer;
-
-        // --- Manual Markdown to HTML Conversion ---
-        // 1. Escape basic HTML characters.
-        content.replace("&", "&amp;");
-        content.replace("<", "&lt;");
-        content.replace(">", "&gt;");
-
-        // 2. Process block elements first.
-        QRegularExpression setextH1Regex(R"((.+)\n=+\n)", QRegularExpression::MultilineOption);
-        content.replace(setextH1Regex, R"(<h1>\1</h1>\n)");
-        QRegularExpression setextH2Regex(R"((.+)\n-+\n)", QRegularExpression::MultilineOption);
-        content.replace(setextH2Regex, R"(<h2>\1</h2>\n)");
-
-        content.replace(QRegularExpression(R"(^#{6}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h6>\1</h6>)");
-        content.replace(QRegularExpression(R"(^#{5}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h5>\1</h5>)");
-        content.replace(QRegularExpression(R"(^#{4}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h4>\1</h4>)");
-        content.replace(QRegularExpression(R"(^#{3}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h3>\1</h3>)");
-        content.replace(QRegularExpression(R"(^#{2}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h2>\1</h2>)");
-        content.replace(QRegularExpression(R"(^#{1}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h1>\1</h1>)");
-
-        content.replace(QRegularExpression(R"(^(\s*\*\s*){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
-        content.replace(QRegularExpression(R"(^(\s*-\s*){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
-        content.replace(QRegularExpression(R"(^(\s*_\s*){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
-
-        // 3. Process inline elements.
-        content.replace(QRegularExpression(R"(\!\s*\[(.*?)\]\((.*?)\))" ), R"(<img src="\2" alt="\1">")");
-        content.replace(QRegularExpression(R"(\[\[(.*?)\]\])"), R"(<a href="\1.md">\1</a>)");
-        content.replace(QRegularExpression(R"(\[(.*?)\]\((.*?)\))" ), R"(<a href="\2">\1</a>)");
-        content.replace(QRegularExpression(R"(\*\*(.*?)\*\*)"), R"(<b>\1</b>)");
-        content.replace(QRegularExpression(R"(\* (.*?)\*)"), R"(<i>\1</i>)");
-        content.replace(QRegularExpression(R"(`(.*?)`)"), R"(<code>\1</code>)");
         
-        // This is a simplified parser. For full correctness, a more stateful approach is needed for lists, blockquotes etc.
-        // For now, the pre-wrap style handles paragraphs and line breaks.
+        Theme currentTheme = m_themes[m_currentThemeName];
 
-        // 4. Wrap in HTML with CSS for visual parity.
+        // 1. Escapar caracteres HTML básicos
+        content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+
+        // 2. Títulos (Headers)
+        content.replace(QRegularExpression(R"(^#\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h1>\1</h1>)");
+        content.replace(QRegularExpression(R"(^##\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h2>\1</h2>)");
+        content.replace(QRegularExpression(R"(^###\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h3>\1</h3>)");
+
+        // 3. Inline Elements - Clean HTML with back-references. Styling is in the CSS block.
+        content.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"(<a href="\1.md">\1</a>)");
+        content.replace(QRegularExpression(R"(\[([^\]]+)\]\(([^)]+)\))"), R"(<a href="\2">\1</a>)");
+        content.replace(QRegularExpression(R"(\*\*(.*?)\*\*)"), R"(<b>\1</b>)");
+        content.replace(QRegularExpression(R"(\*(.*?)\*)"), R"(<i>\1</i>)");
+        content.replace(QRegularExpression(R"(\`(.*?)\`)"), R"(<code>\1</code>)");
+        
+        // 4. Wrap in HTML with dynamic CSS for visual parity.
         QString html = QString(
             "<!DOCTYPE html><html><head><style>"
-            "body { white-space: pre-wrap; font-family: sans-serif; }"
-            "code { background-color: #f0f0f0; padding: 2px 4px; border-radius: 3px; }"
-            "pre { background-color: #f5f5f5; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre; }"
-            "blockquote { border-left: 4px solid #ccc; margin-left: 0; padding-left: 1em; color: #666; }"
-            "hr { border: 0; border-top: 1px solid #ccc; }"
+            "body { white-space: pre-wrap; font-family: '%1'; background-color: %2; color: %3; }"
+            "h1, h2, h3, h4, h5, h6 { color: %4; }"
+            "a { color: %5; text-decoration: underline; }"
+            "code { background-color: %6; color: %7; padding: 2px 4px; border-radius: 3px; }"
+            "pre { background-color: %6; color: %7; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre; }"
+            "hr { border: 0; border-top: 1px solid %4; }"
             "img { max-width: 100%; }"
-            "</style></head><body>%1</body></html>"
-        ).arg(content);
+            "</style></head><body>%8</body></html>"
+        ).arg(m_textEdit->font().family())      // %1: Font Family
+         .arg(currentTheme.windowBg.name())    // %2: Body Background
+         .arg(currentTheme.textFg.name())      // %3: Body Text
+         .arg(currentTheme.heading.name())     // %4: Headings
+         .arg(currentTheme.accent.name())      // %5: Links
+         .arg(currentTheme.quoteBg.name())     // %6: Code Background
+         .arg(currentTheme.code.name())        // %7: Code Text
+         .arg(content);                        // %8: The clean content, processed last
 
         m_textEdit->setReadOnly(true);
         m_textEdit->setHtml(html);
@@ -1043,7 +1039,7 @@ void MainWindow::onTextChanged()
     QString text = m_textEdit->toPlainText();
     if (position <= 0 || position > text.length()) return; 
     
-    QString prefixText = text.left(position);
+    QString prefixText = text.left(position); 
     
     // Check if we're in a [[...]] context
     int bracketPos = prefixText.lastIndexOf("[[");
