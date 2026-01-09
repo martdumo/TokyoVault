@@ -81,19 +81,19 @@ void MainWindow::setupSearchThread()
     m_searchTimer->setSingleShot(true);
     m_searchTimer->setInterval(800);
     connect(m_searchTimer, &QTimer::timeout, this, &MainWindow::startContentSearch);
-    
+
     m_searchThread->start();
 }
 
 void MainWindow::createMenus()
 {
     QMenu *fileMenu = menuBar()->addMenu("&Archivo");
-    
+
     QAction *newAction = new QAction("Nuevo Archivo", this);
     newAction->setShortcut(QKeySequence::New);
     connect(newAction, &QAction::triggered, this, &MainWindow::newFile);
     fileMenu->addAction(newAction);
-    
+
     fileMenu->addSeparator();
 
     QAction *openVaultAction = new QAction("Abrir &Vault (Carpeta)...", this);
@@ -111,7 +111,7 @@ void MainWindow::createMenus()
     QAction *exitAction = new QAction("S&alir", this);
     connect(exitAction, &QAction::triggered, this, &MainWindow::close);
     fileMenu->addAction(exitAction);
-    
+
     QMenu *editMenu = menuBar()->addMenu("&Editar");
     QAction *findAction = new QAction("&Buscar y Reemplazar...", this);
     findAction->setShortcut(QKeySequence::Find);
@@ -125,7 +125,7 @@ void MainWindow::createMenus()
     customizeMenu->addSeparator();
     QMenu *themesMenu = customizeMenu->addMenu("&Temas");
     QActionGroup *themeActionGroup = new QActionGroup(this);
-    
+
     for (const QString &themeName : m_themes.keys()) {
         QAction *action = new QAction(themeName, this);
         action->setCheckable(true);
@@ -220,7 +220,7 @@ void MainWindow::setupUI()
     connect(m_textEdit, &MarkdownTextEdit::textChanged, this, &MainWindow::onDocumentModified);
     connect(m_textEdit, &MarkdownTextEdit::textChanged, this, &MainWindow::updateStatusBar);
     connect(m_textEdit, &MarkdownTextEdit::wikiLinkActivated, this, &MainWindow::handleLinkNavigation);
-    
+
     m_highlighter = new MarkdownHighlighter(m_textEdit->document());
     m_mainSplitter->addWidget(leftPanel);
     m_mainSplitter->addWidget(m_textEdit);
@@ -258,7 +258,7 @@ void MainWindow::handleSearchResults(const QStringList &matchingFiles)
     if (m_lastSearchTerm.isEmpty()) {
         m_proxyModel->setFilterRegularExpression("");
     } else if (matchingFiles.isEmpty()) {
-        m_proxyModel->setFilterRegularExpression(QString("$.")); 
+        m_proxyModel->setFilterRegularExpression(QString("$."));
     } else {
         QStringList fileNames;
         for (const QString &path : matchingFiles) {
@@ -332,15 +332,15 @@ void MainWindow::toggleEditMode()
         m_toggleButton->setText("Preview Mode");
         m_textEdit->setReadOnly(false);
         m_highlighter->setDocument(m_textEdit->document());
-        m_textEdit->setPlainText(m_rawMarkdownBuffer); 
-        m_highlighter->rehighlight(); 
+        m_textEdit->setPlainText(m_rawMarkdownBuffer);
+        m_highlighter->rehighlight();
     } else {
         m_toggleButton->setText("Edit Mode");
         m_highlighter->setDocument(nullptr);
         m_rawMarkdownBuffer = m_textEdit->toPlainText();
         QString content = m_rawMarkdownBuffer;
 
-        // --- Manual Markdown to HTML Conversion (v5.3) ---
+        // --- Manual Markdown to HTML Conversion (v5.5) ---
         // Provides absolute control over visual parity for whitespace and formatting.
 
         // 1. Escape basic HTML characters to prevent rendering them as tags.
@@ -348,23 +348,288 @@ void MainWindow::toggleEditMode()
         content.replace("<", "&lt;");
         content.replace(">", "&gt;");
 
-        // 2. Apply simple Markdown formatting rules via Regex, in a safe order.
+        // 2. Apply Markdown formatting rules via Regex, in a safe order.
         // Using Raw String Literals R"(...)" to avoid escaping hell.
-        content.replace(QRegularExpression(R"(\[([^\]]+)\]\(([^)]+)\))"), R"(<a href="\2">\1</a>)");      // Standard links
-        content.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"(<a href="\1.md">\1</a>)");        // Wiki-links
-        content.replace(QRegularExpression(R"(\*\*(.*?)\*\*)"), R"(<b>\1</b>)");                         // Bold
-        content.replace(QRegularExpression(R"((?<!\*)\*(.*?)\*(?!\*))"), R"(<i>\1</i>)"); // Italic (negative lookbehind/ahead)
-        content.replace(QRegularExpression(R"(`(.*?)`)"), R"(<code>\1</code>)");                         // Code
         
-        // 3. Convert all newlines to <br> tags for perfect 1:1 line rendering.
+        // Process Setext-style headers (H1 and H2 with === and ---)
+        // First, find all lines that are followed by a line of === or ---
+        QRegularExpression setextH1Regex(R"((.+)\n=+\n)", QRegularExpression::MultilineOption);
+        content.replace(setextH1Regex, R"(<h1>\1</h1>\n)");
+        
+        QRegularExpression setextH2Regex(R"((.+)\n-+\n)", QRegularExpression::MultilineOption);
+        content.replace(setextH2Regex, R"(<h2>\1</h2>\n)");
+        
+        // Headers: # H1, ## H2, ### H3, etc.
+        content.replace(QRegularExpression(R"(^#{6}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h6>\1</h6>)");
+        content.replace(QRegularExpression(R"(^#{5}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h5>\1</h5>)");
+        content.replace(QRegularExpression(R"(^#{4}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h4>\1</h4>)");
+        content.replace(QRegularExpression(R"(^#{3}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h3>\1</h3>)");
+        content.replace(QRegularExpression(R"(^#{2}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h2>\1</h2>)");
+        content.replace(QRegularExpression(R"(^#{1}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h1>\1</h1>)");
+        
+        // Process blockquotes - handle multiple levels of nesting
+        QStringList lines = content.split("\n");
+        QStringList processedLines;
+        int i = 0;
+        
+        while (i < lines.size()) {
+            QString line = lines[i];
+            
+            // Check for nested blockquotes
+            if (line.startsWith(">")) {
+                // Count the depth of nesting
+                int depth = 0;
+                QString remainingLine = line;
+                
+                // Count how many '>' prefixes there are
+                while (remainingLine.startsWith(">")) {
+                    depth++;
+                    remainingLine = remainingLine.mid(1); // Remove the '>'
+                    if (remainingLine.startsWith(" ")) {
+                        remainingLine = remainingLine.mid(1); // Remove the space
+                    }
+                }
+                
+                // Create opening blockquote tags
+                QString blockquoteStart = "";
+                for (int j = 0; j < depth; j++) {
+                    blockquoteStart += "<blockquote>";
+                }
+                
+                // Add the content
+                QString blockquoteEnd = "";
+                for (int j = 0; j < depth; j++) {
+                    blockquoteEnd += "</blockquote>";
+                }
+                
+                processedLines << blockquoteStart + "<p>" + remainingLine.trimmed() + "</p>" + blockquoteEnd;
+            } else {
+                processedLines << line;
+            }
+            
+            i++;
+        }
+        
+        content = processedLines.join("\n");
+        
+        // Process lists - need to handle them carefully to preserve line breaks
+        // Split content into lines to process lists properly
+        QStringList contentLines = content.split("\n");
+        QStringList processedContentLines;
+        
+        for (int i = 0; i < contentLines.size(); i++) {
+            QString line = contentLines[i];
+            
+            // Check if this is a list item
+            if (line.trimmed().startsWith("* ") || line.trimmed().startsWith("- ") || line.trimmed().startsWith("+ ")) {
+                // Determine the indentation level
+                int indentLevel = 0;
+                QString trimmedLine = line.trimmed();
+                QString originalLine = line;
+                
+                // Calculate indentation by counting spaces at the beginning
+                int spaceCount = 0;
+                while (originalLine.length() > spaceCount && originalLine[spaceCount] == ' ') {
+                    spaceCount++;
+                }
+                
+                indentLevel = spaceCount / 2; // 2 spaces per indent level
+                
+                // Extract the list marker and content
+                QRegularExpression listRegex(R"(^(\*|-|\+)\s+(.+)$)");
+                QRegularExpressionMatch match = listRegex.match(trimmedLine);
+                
+                if (match.hasMatch()) {
+                    QString marker = match.captured(1);
+                    QString content = match.captured(2);
+                    
+                    // Generate proper indentation for nested lists
+                    QString indent = "";
+                    for (int j = 0; j < indentLevel; j++) {
+                        indent += "  ";
+                    }
+                    
+                    // Determine if it's an unordered list
+                    processedContentLines << indent + "<li>" + content + "</li>";
+                } else {
+                    processedContentLines << line;
+                }
+            } else if (QRegularExpression(R"(^\d+\.\s+.+$)").match(line.trimmed()).hasMatch()) {
+                // Handle ordered lists
+                int indentLevel = 0;
+                QString trimmedLine = line.trimmed();
+                QString originalLine = line;
+                
+                // Calculate indentation by counting spaces at the beginning
+                int spaceCount = 0;
+                while (originalLine.length() > spaceCount && originalLine[spaceCount] == ' ') {
+                    spaceCount++;
+                }
+                
+                indentLevel = spaceCount / 2; // 2 spaces per indent level
+                
+                QRegularExpression orderedListRegex(R"(^(\d+)\.\s+(.+)$)");
+                QRegularExpressionMatch match = orderedListRegex.match(trimmedLine);
+                
+                if (match.hasMatch()) {
+                    QString number = match.captured(1);
+                    QString content = match.captured(2);
+                    
+                    // Generate proper indentation for nested lists
+                    QString indent = "";
+                    for (int j = 0; j < indentLevel; j++) {
+                        indent += "  ";
+                    }
+                    
+                    processedContentLines << indent + "<li>" + content + "</li>";
+                } else {
+                    processedContentLines << line;
+                }
+            } else {
+                processedContentLines << line;
+            }
+        }
+        
+        content = processedContentLines.join("\n");
+        
+        // Now wrap consecutive list items in proper ul/ol tags
+        QStringList finalLines = content.split("\n");
+        QStringList resultLines;
+        int idx = 0;
+        
+        while (idx < finalLines.size()) {
+            QString line = finalLines[idx];
+            
+            if (line.contains("<li>")) {
+                // Determine if this is part of an ordered or unordered list
+                bool isOrdered = false;
+                
+                // Check if this looks like an ordered list by looking at the original markdown
+                // For now, we'll determine this by checking the context
+                if (idx > 0 && finalLines[idx-1].contains("<ol>")) {
+                    isOrdered = true;
+                } else if (idx > 0 && finalLines[idx-1].contains("<ul>")) {
+                    isOrdered = false;
+                } else {
+                    // Look ahead to see if we're in a sequence of list items
+                    int nextIdx = idx;
+                    bool hasOrdered = false;
+                    bool hasUnordered = false;
+                    
+                    while (nextIdx < finalLines.size() && finalLines[nextIdx].contains("<li>")) {
+                        // Check if this line originally had an ordered list marker
+                        // Since we've already converted, we need to infer from context
+                        hasOrdered = true; // Default assumption for now
+                        nextIdx++;
+                    }
+                    
+                    // For simplicity, let's assume unordered if we can't determine
+                    isOrdered = false;
+                }
+                
+                // Collect all consecutive list items
+                QString listTag = isOrdered ? "<ol>" : "<ul>";
+                QString endTag = isOrdered ? "</ol>" : "</ul>";
+                
+                resultLines << listTag;
+                resultLines << line;
+                
+                idx++;
+                while (idx < finalLines.size() && finalLines[idx].contains("<li>")) {
+                    resultLines << finalLines[idx];
+                    idx++;
+                }
+                
+                resultLines << endTag;
+            } else {
+                resultLines << line;
+                idx++;
+            }
+        }
+        
+        content = resultLines.join("\n");
+        
+        // Code blocks (indented with 4 spaces or a tab)
+        // Process code blocks by identifying lines that start with 4 spaces or a tab
+        QStringList codeLines = content.split("\n");
+        QStringList processedCodeLines;
+        bool inCodeBlock = false;
+        
+        for (int i = 0; i < codeLines.size(); i++) {
+            QString line = codeLines[i];
+            
+            // Check if the line starts with 4 spaces or a tab
+            if (line.startsWith("    ") || line.startsWith("\t")) {
+                if (!inCodeBlock) {
+                    // Start a new code block
+                    processedCodeLines << "<pre><code>";
+                    inCodeBlock = true;
+                }
+                // Add the line content (removing the indentation)
+                QString codeLine = line.startsWith("\t") ? line.mid(1) : line.mid(4);
+                processedCodeLines << codeLine;
+            } else {
+                if (inCodeBlock) {
+                    // End the current code block
+                    processedCodeLines << "</code></pre>";
+                    inCodeBlock = false;
+                }
+                processedCodeLines << line;
+            }
+        }
+        
+        // Close any remaining open code block
+        if (inCodeBlock) {
+            processedCodeLines << "</code></pre>";
+        }
+        
+        content = processedCodeLines.join("\n");
+        
+        // Horizontal rules
+        content.replace(QRegularExpression(R"(^(\* \*){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
+        content.replace(QRegularExpression(R"(^(\*\*){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
+        content.replace(QRegularExpression(R"(^(- ){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
+        content.replace(QRegularExpression(R"(^(-){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
+        content.replace(QRegularExpression(R"(^(_ ){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
+        content.replace(QRegularExpression(R"(^(_){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
+        
+        // Images - Fixed regex patterns to avoid illegal escape sequences
+        content.replace(QRegularExpression(R"(!\[([^\]]*)\]\(([^)]+)\))"), QString("<img src=\"%2\" alt=\"%1\" />"));
+        content.replace(QRegularExpression(R"(!\[([^\]]*)\]\(([^)]+)\s+\"([^\"]+)\"\))"), QString("<img src=\"%2\" alt=\"%1\" title=\"%3\" />"));
+        
+        // Standard links
+        content.replace(QRegularExpression(R"(\[([^\]]+)\]\(([^)]+)\))"), QString("<a href=\"%2\">%1</a>"));
+        // Wiki-links
+        content.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), QString("<a href=\"%1.md\">%1</a>"));
+        // Bold
+        content.replace(QRegularExpression(R"(\*\*(.*?)\*\*)"), QString("<b>%1</b>"));
+        // Italic (with negative lookbehind/ahead to avoid matching inside words)
+        content.replace(QRegularExpression(R"((?<!\*)\*(.*?)\*(?!\*))"), QString("<i>%1</i>"));
+        // Code (inline)
+        content.replace(QRegularExpression(R"(`(.*?)`)"), QString("<code>%1</code>"));
+
+        // Replace remaining newlines with <br> tags for paragraphs
         content.replace("\n", "<br>");
 
-        // 4. Wrap the content in a minimal HTML document, using a div with 'white-space: pre'
-        //    to force 1:1 rendering of all whitespace, including multiple spaces.
-        QString html = QString("<!DOCTYPE html><html><body><div style='white-space: pre; font-family: \"%1\";'>%2</div></body></html>")
+        // 4. Wrap the content in a minimal HTML document with proper styling for word wrap
+        QString html = QString("<!DOCTYPE html><html><head><style>"
+                               "body { font-family: \"%1\"; margin: 10px; line-height: 1.6; } "
+                               "h1, h2, h3, h4, h5, h6 { margin: 10px 0; } "
+                               "p { margin: 10px 0; } "
+                               "code { background-color: #f0f0f0; padding: 2px 4px; border-radius: 3px; } "
+                               "pre { background-color: #f5f5f5; padding: 10px; border-radius: 5px; overflow-x: auto; } "
+                               "blockquote { border-left: 4px solid #ccc; margin: 10px 0; padding-left: 16px; color: #666; } "
+                               "blockquote blockquote { margin: 5px 0; padding-left: 12px; border-left: 3px solid #ddd; } "
+                               "blockquote blockquote blockquote { border-left: 2px solid #eee; } "
+                               "ul, ol { margin: 10px 0; padding-left: 20px; } "
+                               "li { margin: 5px 0; } "
+                               "hr { margin: 20px 0; border: 0; border-top: 1px solid #ccc; } "
+                               "img { max-width: 100%; height: auto; } "
+                               "</style></head>"
+                               "<body>%2</body></html>")
                            .arg(m_textEdit->font().family())
                            .arg(content);
-        
+
         m_textEdit->setReadOnly(true);
         m_textEdit->setHtml(html);
     }
@@ -373,28 +638,28 @@ void MainWindow::toggleEditMode()
 
 void MainWindow::handleLinkNavigation(const QString &link) {
     QString finalLink = link.trimmed();
-    
+
     // Handle external web links
     if (finalLink.contains("://")) {
         QDesktopServices::openUrl(QUrl(finalLink));
         return;
     }
-    
+
     if (m_currentVaultPath.isEmpty()) return;
 
     // Construct the full path for the local markdown file
-    QString newFilePath = finalLink.endsWith(".md") 
-        ? m_currentVaultPath + "/" + finalLink 
+    QString newFilePath = finalLink.endsWith(".md")
+        ? m_currentVaultPath + "/" + finalLink
         : m_currentVaultPath + "/" + finalLink + ".md";
-    
+
     QFileInfo fileInfo(newFilePath);
 
     // If the file doesn't exist, ask the user if they want to create it.
     if (!fileInfo.exists()) {
         auto reply = QMessageBox::question(
-            this, 
-            "Crear archivo", 
-            "El archivo '" + fileInfo.fileName() + "' no existe.\n¿Quieres crearlo?", 
+            this,
+            "Crear archivo",
+            "El archivo '" + fileInfo.fileName() + "' no existe.\n¿Quieres crearlo?",
             QMessageBox::Yes | QMessageBox::No
         );
 
@@ -403,7 +668,7 @@ void MainWindow::handleLinkNavigation(const QString &link) {
             if (!maybeSave()) {
                 return; // Stop if user cancels saving the current file.
             }
-            
+
             // ONLY if maybeSave() was successful, create the new file.
             QFile file(newFilePath);
             if (file.open(QIODevice::WriteOnly)) {
@@ -433,7 +698,7 @@ void MainWindow::showFontDialog()
 
 void MainWindow::showHelpDialog()
 {
-    QString helpText = 
+    QString helpText =
         "<h2>Guía Rápida de Markdown</h2>"
         "<p>Usa estos sencillos códigos para dar formato a tu texto.</p>"
         "<hr>"
@@ -456,10 +721,10 @@ void MainWindow::openFile() { if(maybeSave()){QString fp=QFileDialog::getOpenFil
 void MainWindow::openVault(const QString &path){QString d=path.isEmpty()?QFileDialog::getExistingDirectory(this,"Abrir Vault"):path;if(!d.isEmpty()){m_currentVaultPath=d;m_fileSystemModel->setRootPath(d);m_treeView->setRootIndex(m_proxyModel->mapFromSource(m_fileSystemModel->index(d)));}}
 void MainWindow::closeVault(){if(maybeSave()){m_currentVaultPath.clear();m_currentFilePath.clear();m_fileSystemModel->setRootPath("");m_textEdit->clear();m_rawMarkdownBuffer.clear();setWindowTitle("ME[*]");m_textEdit->document()->setModified(false);updateStatusBar();}}
 void MainWindow::onFileClicked(const QModelIndex &idx){if(!idx.isValid())return;auto sIdx=m_proxyModel->mapToSource(idx);QString fp=m_fileSystemModel->filePath(sIdx);if(m_fileSystemModel->isDir(sIdx)||fp.isEmpty())return;if(maybeSave())loadFile(fp);}
-bool MainWindow::loadFile(const QString& fp,bool addHist){QFile f(fp);if(!f.open(QIODevice::ReadOnly|QIODevice::Text))return false;m_currentFilePath=fp;QTextStream in(&f);m_rawMarkdownBuffer=in.readAll();m_textEdit->setPlainText(m_rawMarkdownBuffer);f.close();if(!m_isEditMode){m_isEditMode=true;toggleEditMode();m_isEditMode=true;} 
-m_textEdit->setPlainText(m_rawMarkdownBuffer); 
+bool MainWindow::loadFile(const QString& fp,bool addHist){QFile f(fp);if(!f.open(QIODevice::ReadOnly|QIODevice::Text))return false;m_currentFilePath=fp;QTextStream in(&f);m_rawMarkdownBuffer=in.readAll();m_textEdit->setPlainText(m_rawMarkdownBuffer);f.close();if(!m_isEditMode){m_isEditMode=true;toggleEditMode();m_isEditMode=true;}
+m_textEdit->setPlainText(m_rawMarkdownBuffer);
 m_textEdit->document()->setModified(false);setWindowTitle(QFileInfo(fp).fileName()+" - ME[*]");updateStatusBar();if(addHist){if(m_historyIndex>=0&&m_historyIndex<m_fileHistory.size()-1)m_fileHistory=m_fileHistory.mid(0,m_historyIndex+1);if(m_fileHistory.isEmpty()||m_fileHistory.last()!=fp)m_fileHistory.append(fp);m_historyIndex=m_fileHistory.size()-1;}m_historyBackButton->setEnabled(m_historyIndex>0);m_historyForwardButton->setEnabled(m_historyIndex<m_fileHistory.size()-1);return true;}
-void MainWindow::saveFile(){if(m_currentFilePath.isEmpty()){QString fp=QFileDialog::getSaveFileName(this,"Guardar",m_currentVaultPath,"*.md");if(fp.isEmpty())return;m_currentFilePath=fp;}QFile f(m_currentFilePath);if(!f.open(QIODevice::WriteOnly|QIODevice::Text))return;QTextStream out(&f);QString c=m_isEditMode?m_textEdit->toPlainText():m_rawMarkdownBuffer;out<<c;f.close();if(m_isEditMode)m_rawMarkdownBuffer=c;m_textEdit->document()->setModified(false);setWindowTitle(QFileInfo(m_currentFilePath).fileName()+" - ME[*]");}
+void MainWindow::saveFile(){if(m_currentFilePath.isEmpty()){QString fp=QFileDialog::getOpenFileName(this,"Guardar",m_currentVaultPath,"*.md");if(fp.isEmpty())return;m_currentFilePath=fp;}QFile f(m_currentFilePath);if(!f.open(QIODevice::WriteOnly|QIODevice::Text))return;QTextStream out(&f);QString c=m_isEditMode?m_textEdit->toPlainText():m_rawMarkdownBuffer;out<<c;f.close();if(m_isEditMode)m_rawMarkdownBuffer=c;m_textEdit->document()->setModified(false);setWindowTitle(QFileInfo(m_currentFilePath).fileName()+" - ME[*]");}
 void MainWindow::onDocumentModified(){setWindowModified(m_textEdit->document()->isModified());}
 bool MainWindow::maybeSave(){if(!m_textEdit->document()->isModified())return true;auto r=QMessageBox::warning(this,"Guardar","Cambios sin guardar",QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel);if(r==QMessageBox::Save){saveFile();return!m_textEdit->document()->isModified();}if(r==QMessageBox::Cancel)return false;return true;}
 void MainWindow::updateStatusBar(){m_filePathLabel->setText(m_currentFilePath.isEmpty() ? "" : m_currentFilePath);QString t=m_isEditMode?m_textEdit->toPlainText():m_rawMarkdownBuffer;m_wordCountLabel->setText(QString("%1w").arg(t.split(QRegularExpression("\\s+"),Qt::SkipEmptyParts).count()));}
