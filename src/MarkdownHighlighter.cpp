@@ -13,7 +13,7 @@ MarkdownHighlighter::MarkdownHighlighter(QTextDocument *parent)
     m_headerFormat.setFontWeight(QFont::Bold);
     m_boldFormat.setFontWeight(QFont::Bold);
     m_italicFormat.setFontItalic(true);
-    
+
     // Nueva fuente para el código
     m_codeFormat.setFontFamilies({"JetBrains Mono", "Consolas", "monospace"});
     m_multiLineCodeFormat.setFontFamilies({"JetBrains Mono", "Consolas", "monospace"});
@@ -27,14 +27,14 @@ void MarkdownHighlighter::setTheme(const Theme &theme)
 {
     m_headerFormat.setForeground(theme.heading);
     // Usamos el color de acento para los links para mayor visibilidad
-    m_linkFormat.setForeground(theme.accent); 
+    m_linkFormat.setForeground(theme.accent);
     m_codeFormat.setForeground(theme.code);
     m_boldFormat.setForeground(theme.bold);
     m_italicFormat.setForeground(theme.italic);
-    
+
     m_quoteFormat.setBackground(theme.quoteBg);
     m_quoteFormat.setForeground(theme.mutedFg);
-    
+
     m_multiLineCodeFormat.setForeground(theme.code);
     m_multiLineCodeFormat.setBackground(theme.editorBg.darker(110));
 
@@ -42,54 +42,99 @@ void MarkdownHighlighter::setTheme(const Theme &theme)
     rehighlight();
 }
 
-
 void MarkdownHighlighter::highlightBlock(const QString &text)
 {
-    // --- Reglas de una línea ---
-    // Títulos (#, ##, ...)
-    QRegularExpressionMatchIterator matchIterator = QRegularExpression(R"(^#{1,6}\s.*)").globalMatch(text);
-    while (matchIterator.hasNext()) {
-        QRegularExpressionMatch match = matchIterator.next();
-        setFormat(match.capturedStart(), match.capturedLength(), m_headerFormat);
-    }
-    
-    // Links ([texto](url) y [[wikilink]])
-    matchIterator = QRegularExpression(R"(\[\[[^\]]+\]\]|\[[^\]]+\]\([^\)]+\))").globalMatch(text);
-    while (matchIterator.hasNext()) {
-        QRegularExpressionMatch match = matchIterator.next();
-        setFormat(match.capturedStart(), match.capturedLength(), m_linkFormat);
+    // Reset the format for this block
+    QTextCharFormat defaultFormat;
+    setFormat(0, text.length(), defaultFormat);
+
+    // Process the text in order of complexity to avoid conflicts
+    // 1. Headers first (they start at the beginning of the line)
+    QRegularExpression headerRegex(R"(^(#{1,6})\s+(.+))");
+    QRegularExpressionMatch headerMatch = headerRegex.match(text);
+    if (headerMatch.hasMatch()) {
+        int headerLevel = headerMatch.captured(1).length(); // Number of #
+        int headerStart = headerMatch.capturedStart(1);
+        int headerEnd = headerMatch.capturedEnd(2);
+        
+        // Format the header text
+        setFormat(headerStart, headerEnd - headerStart, m_headerFormat);
     }
 
-    // Código en línea (`)
-    matchIterator = QRegularExpression(R"(`[^`]+`)").globalMatch(text);
-    while (matchIterator.hasNext()) {
-        QRegularExpressionMatch match = matchIterator.next();
+    // 2. Blockquotes (start with > at the beginning of the line)
+    QRegularExpression quoteRegex(R"(^>\s+(.+))");
+    QRegularExpressionMatch quoteMatch = quoteRegex.match(text);
+    if (quoteMatch.hasMatch()) {
+        setFormat(0, text.length(), m_quoteFormat);
+    }
+
+    // 3. Process inline elements with proper precedence
+    // First, find all code spans to avoid processing markdown inside them
+    QVector<QPair<int, int>> codeSpans; // Store start and end positions of code spans
+    QRegularExpression codeRegex(R"(`[^`]*`)");
+    QRegularExpressionMatchIterator codeIter = codeRegex.globalMatch(text);
+    while (codeIter.hasNext()) {
+        QRegularExpressionMatch match = codeIter.next();
+        codeSpans.append(qMakePair(match.capturedStart(), match.capturedEnd()));
         setFormat(match.capturedStart(), match.capturedLength(), m_codeFormat);
     }
 
-    // Negrita (**)
-    matchIterator = QRegularExpression(R"(\*\*[^\*]+\*\*)").globalMatch(text);
-    while (matchIterator.hasNext()) {
-        QRegularExpressionMatch match = matchIterator.next();
-        setFormat(match.capturedStart(), match.capturedLength(), m_boldFormat);
+    // 4. Process bold and italic, avoiding code spans
+    // Bold: **text**
+    QRegularExpression boldRegex(R"(\*\*[^\*]+\*\*)");
+    QRegularExpressionMatchIterator boldIter = boldRegex.globalMatch(text);
+    while (boldIter.hasNext()) {
+        QRegularExpressionMatch match = boldIter.next();
+        // Check if this overlaps with any code span
+        bool overlaps = false;
+        for (const auto& span : codeSpans) {
+            if (!(match.capturedEnd() <= span.first || match.capturedStart() >= span.second)) {
+                overlaps = true;
+                break;
+            }
+        }
+        if (!overlaps) {
+            setFormat(match.capturedStart(), match.capturedLength(), m_boldFormat);
+        }
     }
 
-    // Itálica (*)
-    matchIterator = QRegularExpression(R"(\*[^\*]+\*)").globalMatch(text);
-     while (matchIterator.hasNext()) {
-        QRegularExpressionMatch match = matchIterator.next();
-        setFormat(match.capturedStart(), match.capturedLength(), m_italicFormat);
+    // 5. Italic: *text* (but not if it's part of bold **text** or inside words)
+    QRegularExpression italicRegex(R"((?<!\*)\*([^\*]+)\*(?!\*))");
+    QRegularExpressionMatchIterator italicIter = italicRegex.globalMatch(text);
+    while (italicIter.hasNext()) {
+        QRegularExpressionMatch match = italicIter.next();
+        // Check if this overlaps with any code span
+        bool overlaps = false;
+        for (const auto& span : codeSpans) {
+            if (!(match.capturedEnd() <= span.first || match.capturedStart() >= span.second)) {
+                overlaps = true;
+                break;
+            }
+        }
+        if (!overlaps) {
+            setFormat(match.capturedStart(), match.capturedLength(), m_italicFormat);
+        }
     }
 
-    // Citas (>)
-    matchIterator = QRegularExpression(R"(^>\s.*)").globalMatch(text);
-    while (matchIterator.hasNext()) {
-        QRegularExpressionMatch match = matchIterator.next();
-        setFormat(match.capturedStart(), match.capturedLength(), m_quoteFormat);
+    // 6. Links: [text](url) and [[wikilinks]]
+    QRegularExpression linkRegex(R"(\[([^\]]+)\]\([^)]+\)|\[\[([^\]]+)\]\])");
+    QRegularExpressionMatchIterator linkIter = linkRegex.globalMatch(text);
+    while (linkIter.hasNext()) {
+        QRegularExpressionMatch match = linkIter.next();
+        // Check if this overlaps with any code span
+        bool overlaps = false;
+        for (const auto& span : codeSpans) {
+            if (!(match.capturedEnd() <= span.first || match.capturedStart() >= span.second)) {
+                overlaps = true;
+                break;
+            }
+        }
+        if (!overlaps) {
+            setFormat(match.capturedStart(), match.capturedLength(), m_linkFormat);
+        }
     }
 
-
-    // --- Bloques de Código Multilínea ---
+    // 7. Process multiline code blocks
     setCurrentBlockState(0);
 
     int startIndex = 0;

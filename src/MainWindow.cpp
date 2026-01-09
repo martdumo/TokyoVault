@@ -66,7 +66,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Setup autocompletion
     setupAutoCompletion();
-    
+
     // Connect text edit signals for autocompletion
     connect(m_textEdit, &QTextEdit::textChanged, this, &MainWindow::onTextChanged);
 
@@ -226,11 +226,11 @@ void MainWindow::setupUI()
     m_treeView->setModel(m_proxyModel);
     for (int i = 1; i < m_fileSystemModel->columnCount(); ++i) m_treeView->hideColumn(i);
     m_treeView->setHeaderHidden(true);
-    
+
     // Connect right-click context menu
     m_treeView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_treeView, &QTreeView::customContextMenuRequested, this, &MainWindow::onTreeContextMenu);
-    
+
     connect(m_treeView, &QTreeView::clicked, this, &MainWindow::onFileClicked);
     leftLayout->addWidget(m_treeView);
 
@@ -254,24 +254,28 @@ void MainWindow::onTreeContextMenu(const QPoint &pos)
     if (!index.isValid()) return;
 
     QMenu contextMenu(this);
-    
+
     // Add option to create folder
     QAction *createFolderAction = contextMenu.addAction("Crear Carpeta");
     connect(createFolderAction, &QAction::triggered, this, &MainWindow::createFolder);
-    
+
     // Add option to set as default file if it's a markdown file
     QString filePath = m_fileSystemModel->filePath(index);
     if (filePath.endsWith(".md")) {
         QAction *setDefaultAction = contextMenu.addAction("Establecer como archivo por defecto");
         connect(setDefaultAction, &QAction::triggered, this, &MainWindow::setDefaultFile);
     }
-    
+
     // Add option to rename file
     if (QFileInfo(filePath).isFile() && filePath.endsWith(".md")) {
         QAction *renameAction = contextMenu.addAction("Renombrar archivo");
         connect(renameAction, &QAction::triggered, this, &MainWindow::showRenameDialog);
     }
-    
+
+    // Add option to delete file/folder
+    QAction *deleteAction = contextMenu.addAction("Eliminar archivo/carpeta");
+    connect(deleteAction, &QAction::triggered, this, &MainWindow::deleteFileOrFolder);
+
     contextMenu.exec(m_treeView->viewport()->mapToGlobal(pos));
 }
 
@@ -316,28 +320,28 @@ void MainWindow::showRenameDialog()
 
     QString currentPath = m_fileSystemModel->filePath(currentIndex);
     QFileInfo fileInfo(currentPath);
-    
+
     if (!fileInfo.exists() || !fileInfo.isFile()) return;
 
     bool ok = false;
-    QString newName = QInputDialog::getText(this, "Renombrar archivo", 
-                                           "Nuevo nombre:", QLineEdit::Normal, 
+    QString newName = QInputDialog::getText(this, "Renombrar archivo",
+                                           "Nuevo nombre:", QLineEdit::Normal,
                                            fileInfo.baseName(), &ok);
-    
+
     if (ok && !newName.isEmpty()) {
         QString newBaseName = newName;
         if (!newName.endsWith(".md")) {
             newBaseName += ".md";
         }
-        
+
         QString newPath = fileInfo.path() + "/" + newBaseName;
-        
+
         // Check if file with new name already exists
         if (QFile::exists(newPath)) {
             QMessageBox::warning(this, "Error", "Ya existe un archivo con ese nombre.");
             return;
         }
-        
+
         // Rename the file
         if (QFile::rename(currentPath, newPath)) {
             // Update all references to this file in the vault
@@ -349,27 +353,65 @@ void MainWindow::showRenameDialog()
     }
 }
 
+void MainWindow::deleteFileOrFolder()
+{
+    QModelIndex currentIndex = m_treeView->currentIndex();
+    if (!currentIndex.isValid()) return;
+
+    QString currentPath = m_fileSystemModel->filePath(currentIndex);
+    QFileInfo fileInfo(currentPath);
+
+    if (!fileInfo.exists()) return;
+
+    QMessageBox::StandardButton reply;
+    if (fileInfo.isDir()) {
+        reply = QMessageBox::question(this, "Eliminar carpeta",
+                                   QString("¿Estás seguro de que quieres eliminar la carpeta '%1' y todo su contenido?").arg(fileInfo.fileName()),
+                                   QMessageBox::Yes | QMessageBox::No);
+    } else {
+        reply = QMessageBox::question(this, "Eliminar archivo",
+                                   QString("¿Estás seguro de que quieres eliminar el archivo '%1'?").arg(fileInfo.fileName()),
+                                   QMessageBox::Yes | QMessageBox::No);
+    }
+
+    if (reply == QMessageBox::Yes) {
+        bool success = false;
+        if (fileInfo.isDir()) {
+            QDir dir(currentPath);
+            success = dir.removeRecursively();
+        } else {
+            success = QFile::remove(currentPath);
+        }
+
+        if (success) {
+            m_fileSystemModel->setRootPath(m_currentVaultPath);
+        } else {
+            QMessageBox::warning(this, "Error", "No se pudo eliminar el archivo o carpeta.");
+        }
+    }
+}
+
 void MainWindow::updateLinksAfterRename(const QString &oldName, const QString &newName)
 {
     // Get all markdown files in the vault
     QStringList allFiles = getAllMarkdownFilesInVault();
-    
+
     // Update all links in all files
     for (const QString &filePath : allFiles) {
         QFile file(filePath);
         if (!file.open(QIODevice::ReadWrite)) continue;
-        
+
         QTextStream stream(&file);
         QString content = stream.readAll();
         file.close();
-        
+
         // Update the file content with new links
         QString updatedContent = content;
-        
+
         // Replace [[oldName]] with [[newName]]
         updatedContent.replace("[[" + oldName + "]]", "[[" + newName + "]]");
         updatedContent.replace("[[" + oldName + ".md]]", "[[" + newName + ".md]]");
-        
+
         // Write back the updated content
         if (file.open(QIODevice::WriteOnly)) {
             file.resize(0); // Clear the file
@@ -882,92 +924,6 @@ QString MainWindow::findFileInVault(const QString &fileName)
     return QString(); // Not found
 }
 
-void MainWindow::setupAutoCompletion()
-{
-    // Initialize the completer with an empty model initially
-    m_completer = new QCompleter(this);
-    m_completer->setModel(new QStringListModel(m_markdownFiles, m_completer));
-    m_completer->setCaseSensitivity(Qt::CaseInsensitive);
-    m_completer->setCompletionMode(QCompleter::PopupCompletion);
-    
-    // Connect the completer to the text edit
-    m_completer->setWidget(m_textEdit);
-    connect(m_completer, QOverload<const QString &>::of(&QCompleter::activated),
-            this, &MainWindow::insertCompletion);
-}
-
-void MainWindow::insertCompletion(const QString &completion)
-{
-    if (m_completer->widget() != m_textEdit) return;
-    
-    QTextCursor tc = m_textEdit->textCursor();
-    int extra = completion.length() - m_completer->completionPrefix().length();
-    tc.movePosition(QTextCursor::Left);
-    tc.movePosition(QTextCursor::EndOfWord);
-    tc.insertText(completion.right(extra));
-    
-    m_textEdit->setTextCursor(tc);
-}
-
-QStringList MainWindow::getMarkdownFileNames()
-{
-    QStringList fileNames;
-    if (!m_currentVaultPath.isEmpty()) {
-        QDirIterator it(m_currentVaultPath, QStringList() << "*.md", QDir::Files, QDirIterator::Subdirectories);
-        while (it.hasNext()) {
-            QString filePath = it.next();
-            QFileInfo fileInfo(filePath);
-            QString baseName = fileInfo.baseName();
-            fileNames << baseName;
-        }
-    }
-    return fileNames;
-}
-
-void MainWindow::updateAutoCompletionModel()
-{
-    m_markdownFiles = getMarkdownFileNames();
-    QStringListModel *model = new QStringListModel(m_markdownFiles, m_completer);
-    m_completer->setModel(model);
-}
-
-void MainWindow::showAutoCompletePopup(const QString &prefix)
-{
-    if (m_completer->completionCount() > 0) {
-        m_completer->setCompletionPrefix(prefix);
-        m_completer->complete();
-    }
-}
-
-void MainWindow::onTextChanged()
-{
-    if (!m_isEditMode) return; // Only in edit mode
-    
-    QTextCursor cursor = m_textEdit->textCursor();
-    int position = cursor.position();
-    
-    // Get the text up to the current cursor position
-    QString text = m_textEdit->toPlainText();
-    if (position <= 0 || position > text.length()) return;
-    
-    QString prefixText = text.left(position);
-    
-    // Check if we're in a [[...]] context
-    int bracketPos = prefixText.lastIndexOf("[[");
-    if (bracketPos != -1) {
-        // Extract the text after the [[
-        QString completionPrefix = prefixText.mid(bracketPos + 2);
-        
-        // Update the completion model with current files
-        updateAutoCompletionModel();
-        
-        // Show the autocompletion popup if there's a prefix to match
-        if (!completionPrefix.isEmpty()) {
-            showAutoCompletePopup(completionPrefix);
-        }
-    }
-}
-
 void MainWindow::showFontDialog()
 {
     bool ok;
@@ -1157,6 +1113,16 @@ void MainWindow::setupThemes() {
     m_themes["One Dark"] = {"One Dark", "#282c34", "#21252b", "#abb2bf", "#5c6370", "#61afef", "#98c379", "#c678dd", "#e5c07b", "#e06c75", "#e06c75", "#3f4451"};
     // 6. Light Mode
     m_themes["Light Mode"] = {"Light Mode", "#ffffff", "#f8f9fa", "#212529", "#adb5bd", "#0d6efd", "#198754", "#6f42c1", "#fd7e14", "#dc3545", "#dc3545", "#e9ecef"};
+    // 7. Cyberpunk
+    m_themes["Cyberpunk"] = {"Cyberpunk", "#0d0d0d", "#1a1a1a", "#00ffcc", "#4d4d4d", "#ff00ff", "#00ffff", "#ff00ff", "#ffcc00", "#ff00cc", "#ff00cc", "#262626"};
+    // 8. Synthwave
+    m_themes["Synthwave"] = {"Synthwave", "#1a1a2a", "#26263a", "#ff00ff", "#5d5d7d", "#00ffff", "#00ffcc", "#ff00ff", "#ffff00", "#ff66cc", "#ff66cc", "#33334a"};
+    // 9. Commodore
+    m_themes["Commodore"] = {"Commodore", "#3434ac", "#4d4dcc", "#ffffff", "#7b7bcb", "#ffff00", "#00ff00", "#ffff00", "#ff0000", "#00ffff", "#00ffff", "#5d5dcd"};
+    // 10. Vaporwave
+    m_themes["Vaporwave"] = {"Vaporwave", "#82aaff", "#c792ea", "#f78c6c", "#7fdbca", "#ff5370", "#c3e88d", "#ff5370", "#ffcb6b", "#f07178", "#f07178", "#a0a0c0"};
+    // 11. Mac Tonight
+    m_themes["Mac Tonight"] = {"Mac Tonight", "#000080", "#0000a0", "#ffffff", "#0000ff", "#ffff00", "#ff8c00", "#ffff00", "#ff0000", "#00ff00", "#00ff00", "#0000c0"};
 }
 
 void MainWindow::insertTableTemplate(){}
@@ -1176,3 +1142,89 @@ void MainWindow::replaceAllInEditor(const QString &findText, const QString &repl
 }
 
 void MainWindow::showFindReplaceDialog(){}
+
+void MainWindow::setupAutoCompletion()
+{
+    // Initialize the completer with an empty model initially
+    m_completer = new QCompleter(this);
+    m_completer->setModel(new QStringListModel(m_markdownFiles, m_completer));
+    m_completer->setCaseSensitivity(Qt::CaseInsensitive);
+    m_completer->setCompletionMode(QCompleter::PopupCompletion);
+    
+    // Connect the completer to the text edit
+    m_completer->setWidget(m_textEdit);
+    connect(m_completer, QOverload<const QString &>::of(&QCompleter::activated),
+            this, &MainWindow::insertCompletion);
+}
+
+void MainWindow::insertCompletion(const QString &completion)
+{
+    if (m_completer->widget() != m_textEdit) return;
+    
+    QTextCursor tc = m_textEdit->textCursor();
+    int extra = completion.length() - m_completer->completionPrefix().length();
+    tc.movePosition(QTextCursor::Left);
+    tc.movePosition(QTextCursor::EndOfWord);
+    tc.insertText(completion.right(extra));
+    
+    m_textEdit->setTextCursor(tc);
+}
+
+QStringList MainWindow::getMarkdownFileNames()
+{
+    QStringList fileNames;
+    if (!m_currentVaultPath.isEmpty()) {
+        QDirIterator it(m_currentVaultPath, QStringList() << "*.md", QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            QString filePath = it.next();
+            QFileInfo fileInfo(filePath);
+            QString baseName = fileInfo.baseName();
+            fileNames << baseName;
+        }
+    }
+    return fileNames;
+}
+
+void MainWindow::updateAutoCompletionModel()
+{
+    m_markdownFiles = getMarkdownFileNames();
+    QStringListModel *model = new QStringListModel(m_markdownFiles, m_completer);
+    m_completer->setModel(model);
+}
+
+void MainWindow::showAutoCompletePopup(const QString &prefix)
+{
+    if (m_completer->completionCount() > 0) {
+        m_completer->setCompletionPrefix(prefix);
+        m_completer->complete();
+    }
+}
+
+void MainWindow::onTextChanged()
+{
+    if (!m_isEditMode) return; // Only in edit mode
+    
+    QTextCursor cursor = m_textEdit->textCursor();
+    int position = cursor.position();
+    
+    // Get the text up to the current cursor position
+    QString text = m_textEdit->toPlainText();
+    if (position <= 0 || position > text.length()) return;
+    
+    QString prefixText = text.left(position);
+    
+    // Check if we're in a [[...]] context
+    int bracketPos = prefixText.lastIndexOf("[[");
+    if (bracketPos != -1) {
+        // Extract the text after the [[
+        QString completionPrefix = prefixText.mid(bracketPos + 2);
+        
+        // Update the completion model with current files
+        updateAutoCompletionModel();
+        
+        // Show the autocompletion popup if there's a prefix to match
+        if (!completionPrefix.isEmpty()) {
+            showAutoCompletePopup(completionPrefix);
+        }
+    }
+}

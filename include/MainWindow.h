@@ -90,6 +90,7 @@ private slots:
     void createFolder();
     void setDefaultFile();
     void updateLinksAfterRename(const QString &oldName, const QString &newName);
+    void deleteFileOrFolder();
     
     // --- Autocompletion features ---
     void setupAutoCompletion();
