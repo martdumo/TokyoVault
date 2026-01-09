@@ -6,6 +6,9 @@
 #include <QColor>
 #include <QMap>
 #include <QUrl>
+#include <QStringListModel>
+#include <QCompleter>
+#include <QDirIterator>
 
 // Forward declarations
 class QSplitter;
@@ -25,6 +28,7 @@ class MarkdownTextEdit;
 class MarkdownHighlighter;
 class FindReplaceDialog;
 class SearchWorker;
+class QCompleter;
 
 struct Theme {
     QString name;
@@ -56,7 +60,7 @@ private slots:
     void showFindReplaceDialog();
     void showFontDialog();
     void applyTheme(const QString &themeName);
-    void showHelpDialog(); 
+    void showHelpDialog();
 
     // --- Search ---
     void filterVault(); // Slot connected to search bar text changes, starts the debounce timer
@@ -73,7 +77,7 @@ private slots:
     void findNextInEditor(const QString &text, QTextDocument::FindFlags flags);
     void replaceInEditor(const QString &findText, const QString &replaceText, QTextDocument::FindFlags flags);
     void replaceAllInEditor(const QString &findText, const QString &replaceText, QTextDocument::FindFlags flags);
-    
+
     // --- Formatting ---
     void insertTableTemplate();
     void insertLinkTemplate();
@@ -81,6 +85,21 @@ private slots:
     void applyBold();
     void applyItalic();
     void applyUnderline();
+
+    // --- New features ---
+    void createFolder();
+    void setDefaultFile();
+    void updateLinksAfterRename(const QString &oldName, const QString &newName);
+    
+    // --- Autocompletion features ---
+    void setupAutoCompletion();
+    void insertCompletion(const QString &completion);
+    QStringList getMarkdownFileNames();
+    void showAutoCompletePopup(const QString &prefix);
+    void updateAutoCompletionModel();
+    void onTextChanged();
+    void onTreeContextMenu(const QPoint &pos);
+    void showRenameDialog();
 
 private:
     void createMenus();
@@ -94,6 +113,11 @@ private:
     void loadSettings();
     void applyTextFormatting(const QString& prefix, const QString& suffix = "");
     bool maybeSave();
+    
+    // New helper methods
+    QString findFileInVault(const QString &fileName);
+    void updateAllLinksInVault(const QString &oldLink, const QString &newLink);
+    QStringList getAllMarkdownFilesInVault();
 
     // UI Widgets
     QSplitter *m_mainSplitter;
@@ -133,4 +157,11 @@ private:
     // Theming
     QMap<QString, Theme> m_themes;
     QString m_currentThemeName;
+    
+    // Default file for vault
+    QString m_defaultVaultFile;
+    
+    // Autocompletion
+    QStringList m_markdownFiles;
+    QCompleter *m_completer;
 };

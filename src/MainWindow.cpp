@@ -33,6 +33,13 @@
 #include <QDesktopServices>
 #include <QThread>
 #include <QTimer>
+#include <QMenu>
+#include <QContextMenuEvent>
+#include <QCompleter>
+#include <QAbstractItemView>
+#include <QKeyEvent>
+#include <QStringListModel>
+#include <QDirIterator>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
@@ -56,6 +63,12 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Add global shortcut for toggling edit/preview mode
     new QShortcut(QKeySequence("Ctrl+E"), this, SLOT(toggleEditMode()));
+
+    // Setup autocompletion
+    setupAutoCompletion();
+    
+    // Connect text edit signals for autocompletion
+    connect(m_textEdit, &QTextEdit::textChanged, this, &MainWindow::onTextChanged);
 
     loadSettings();
 }
@@ -213,6 +226,11 @@ void MainWindow::setupUI()
     m_treeView->setModel(m_proxyModel);
     for (int i = 1; i < m_fileSystemModel->columnCount(); ++i) m_treeView->hideColumn(i);
     m_treeView->setHeaderHidden(true);
+    
+    // Connect right-click context menu
+    m_treeView->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_treeView, &QTreeView::customContextMenuRequested, this, &MainWindow::onTreeContextMenu);
+    
     connect(m_treeView, &QTreeView::clicked, this, &MainWindow::onFileClicked);
     leftLayout->addWidget(m_treeView);
 
@@ -228,6 +246,150 @@ void MainWindow::setupUI()
     m_mainSplitter->setStretchFactor(1, 3);
     m_mainSplitter->setSizes({350, 1050});
     setCentralWidget(m_mainSplitter);
+}
+
+void MainWindow::onTreeContextMenu(const QPoint &pos)
+{
+    QModelIndex index = m_treeView->indexAt(pos);
+    if (!index.isValid()) return;
+
+    QMenu contextMenu(this);
+    
+    // Add option to create folder
+    QAction *createFolderAction = contextMenu.addAction("Crear Carpeta");
+    connect(createFolderAction, &QAction::triggered, this, &MainWindow::createFolder);
+    
+    // Add option to set as default file if it's a markdown file
+    QString filePath = m_fileSystemModel->filePath(index);
+    if (filePath.endsWith(".md")) {
+        QAction *setDefaultAction = contextMenu.addAction("Establecer como archivo por defecto");
+        connect(setDefaultAction, &QAction::triggered, this, &MainWindow::setDefaultFile);
+    }
+    
+    // Add option to rename file
+    if (QFileInfo(filePath).isFile() && filePath.endsWith(".md")) {
+        QAction *renameAction = contextMenu.addAction("Renombrar archivo");
+        connect(renameAction, &QAction::triggered, this, &MainWindow::showRenameDialog);
+    }
+    
+    contextMenu.exec(m_treeView->viewport()->mapToGlobal(pos));
+}
+
+void MainWindow::createFolder()
+{
+    if (m_currentVaultPath.isEmpty()) {
+        QMessageBox::warning(this, "Vault no seleccionado", "Por favor, abre un Vault antes de crear una carpeta.");
+        return;
+    }
+
+    bool ok = false;
+    QString folderName = QInputDialog::getText(this, "Nueva Carpeta", "Nombre:", QLineEdit::Normal, "", &ok);
+    if (ok && !folderName.isEmpty()) {
+        QString newFolderPath = m_currentVaultPath + "/" + folderName;
+        QDir dir;
+        if (dir.mkpath(newFolderPath)) {
+            // Refresh the file system model to show the new folder
+            m_fileSystemModel->setRootPath(m_currentVaultPath);
+        } else {
+            QMessageBox::warning(this, "Error", "No se pudo crear la carpeta.");
+        }
+    }
+}
+
+void MainWindow::setDefaultFile()
+{
+    QModelIndex currentIndex = m_treeView->currentIndex();
+    if (!currentIndex.isValid()) return;
+
+    QString filePath = m_fileSystemModel->filePath(currentIndex);
+    if (filePath.endsWith(".md")) {
+        m_defaultVaultFile = filePath;
+        saveSettings(); // Save the default file setting
+        QMessageBox::information(this, "Archivo por defecto", "Este archivo será el predeterminado al abrir el vault.");
+    }
+}
+
+void MainWindow::showRenameDialog()
+{
+    QModelIndex currentIndex = m_treeView->currentIndex();
+    if (!currentIndex.isValid()) return;
+
+    QString currentPath = m_fileSystemModel->filePath(currentIndex);
+    QFileInfo fileInfo(currentPath);
+    
+    if (!fileInfo.exists() || !fileInfo.isFile()) return;
+
+    bool ok = false;
+    QString newName = QInputDialog::getText(this, "Renombrar archivo", 
+                                           "Nuevo nombre:", QLineEdit::Normal, 
+                                           fileInfo.baseName(), &ok);
+    
+    if (ok && !newName.isEmpty()) {
+        QString newBaseName = newName;
+        if (!newName.endsWith(".md")) {
+            newBaseName += ".md";
+        }
+        
+        QString newPath = fileInfo.path() + "/" + newBaseName;
+        
+        // Check if file with new name already exists
+        if (QFile::exists(newPath)) {
+            QMessageBox::warning(this, "Error", "Ya existe un archivo con ese nombre.");
+            return;
+        }
+        
+        // Rename the file
+        if (QFile::rename(currentPath, newPath)) {
+            // Update all references to this file in the vault
+            updateLinksAfterRename(fileInfo.baseName(), newBaseName.left(newBaseName.length() - 3)); // Remove .md extension
+            m_fileSystemModel->setRootPath(m_currentVaultPath);
+        } else {
+            QMessageBox::warning(this, "Error", "No se pudo renombrar el archivo.");
+        }
+    }
+}
+
+void MainWindow::updateLinksAfterRename(const QString &oldName, const QString &newName)
+{
+    // Get all markdown files in the vault
+    QStringList allFiles = getAllMarkdownFilesInVault();
+    
+    // Update all links in all files
+    for (const QString &filePath : allFiles) {
+        QFile file(filePath);
+        if (!file.open(QIODevice::ReadWrite)) continue;
+        
+        QTextStream stream(&file);
+        QString content = stream.readAll();
+        file.close();
+        
+        // Update the file content with new links
+        QString updatedContent = content;
+        
+        // Replace [[oldName]] with [[newName]]
+        updatedContent.replace("[[" + oldName + "]]", "[[" + newName + "]]");
+        updatedContent.replace("[[" + oldName + ".md]]", "[[" + newName + ".md]]");
+        
+        // Write back the updated content
+        if (file.open(QIODevice::WriteOnly)) {
+            file.resize(0); // Clear the file
+            QTextStream outStream(&file);
+            outStream << updatedContent;
+            file.close();
+        }
+    }
+}
+
+QStringList MainWindow::getAllMarkdownFilesInVault()
+{
+    QStringList files;
+    if (!m_currentVaultPath.isEmpty()) {
+        QDirIterator it(m_currentVaultPath, QStringList() << "*.md", QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            files << it.next();
+        }
+    }
+    return files;
 }
 
 void MainWindow::filterVault()
@@ -350,15 +512,15 @@ void MainWindow::toggleEditMode()
 
         // 2. Apply Markdown formatting rules via Regex, in a safe order.
         // Using Raw String Literals R"(...)" to avoid escaping hell.
-        
+
         // Process Setext-style headers (H1 and H2 with === and ---)
         // First, find all lines that are followed by a line of === or ---
         QRegularExpression setextH1Regex(R"((.+)\n=+\n)", QRegularExpression::MultilineOption);
         content.replace(setextH1Regex, R"(<h1>\1</h1>\n)");
-        
+
         QRegularExpression setextH2Regex(R"((.+)\n-+\n)", QRegularExpression::MultilineOption);
         content.replace(setextH2Regex, R"(<h2>\1</h2>\n)");
-        
+
         // Headers: # H1, ## H2, ### H3, etc.
         content.replace(QRegularExpression(R"(^#{6}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h6>\1</h6>)");
         content.replace(QRegularExpression(R"(^#{5}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h5>\1</h5>)");
@@ -366,21 +528,21 @@ void MainWindow::toggleEditMode()
         content.replace(QRegularExpression(R"(^#{3}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h3>\1</h3>)");
         content.replace(QRegularExpression(R"(^#{2}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h2>\1</h2>)");
         content.replace(QRegularExpression(R"(^#{1}\s+(.+)$)", QRegularExpression::MultilineOption), R"(<h1>\1</h1>)");
-        
+
         // Process blockquotes - handle multiple levels of nesting
         QStringList lines = content.split("\n");
         QStringList processedLines;
         int i = 0;
-        
+
         while (i < lines.size()) {
             QString line = lines[i];
-            
+
             // Check for nested blockquotes
             if (line.startsWith(">")) {
                 // Count the depth of nesting
                 int depth = 0;
                 QString remainingLine = line;
-                
+
                 // Count how many '>' prefixes there are
                 while (remainingLine.startsWith(">")) {
                     depth++;
@@ -389,66 +551,66 @@ void MainWindow::toggleEditMode()
                         remainingLine = remainingLine.mid(1); // Remove the space
                     }
                 }
-                
+
                 // Create opening blockquote tags
                 QString blockquoteStart = "";
                 for (int j = 0; j < depth; j++) {
                     blockquoteStart += "<blockquote>";
                 }
-                
+
                 // Add the content
                 QString blockquoteEnd = "";
                 for (int j = 0; j < depth; j++) {
                     blockquoteEnd += "</blockquote>";
                 }
-                
+
                 processedLines << blockquoteStart + "<p>" + remainingLine.trimmed() + "</p>" + blockquoteEnd;
             } else {
                 processedLines << line;
             }
-            
+
             i++;
         }
-        
+
         content = processedLines.join("\n");
-        
+
         // Process lists - need to handle them carefully to preserve line breaks
         // Split content into lines to process lists properly
         QStringList contentLines = content.split("\n");
         QStringList processedContentLines;
-        
+
         for (int i = 0; i < contentLines.size(); i++) {
             QString line = contentLines[i];
-            
+
             // Check if this is a list item
             if (line.trimmed().startsWith("* ") || line.trimmed().startsWith("- ") || line.trimmed().startsWith("+ ")) {
                 // Determine the indentation level
                 int indentLevel = 0;
                 QString trimmedLine = line.trimmed();
                 QString originalLine = line;
-                
+
                 // Calculate indentation by counting spaces at the beginning
                 int spaceCount = 0;
                 while (originalLine.length() > spaceCount && originalLine[spaceCount] == ' ') {
                     spaceCount++;
                 }
-                
+
                 indentLevel = spaceCount / 2; // 2 spaces per indent level
-                
+
                 // Extract the list marker and content
                 QRegularExpression listRegex(R"(^(\*|-|\+)\s+(.+)$)");
                 QRegularExpressionMatch match = listRegex.match(trimmedLine);
-                
+
                 if (match.hasMatch()) {
                     QString marker = match.captured(1);
                     QString content = match.captured(2);
-                    
+
                     // Generate proper indentation for nested lists
                     QString indent = "";
                     for (int j = 0; j < indentLevel; j++) {
                         indent += "  ";
                     }
-                    
+
                     // Determine if it's an unordered list
                     processedContentLines << indent + "<li>" + content + "</li>";
                 } else {
@@ -459,28 +621,28 @@ void MainWindow::toggleEditMode()
                 int indentLevel = 0;
                 QString trimmedLine = line.trimmed();
                 QString originalLine = line;
-                
+
                 // Calculate indentation by counting spaces at the beginning
                 int spaceCount = 0;
                 while (originalLine.length() > spaceCount && originalLine[spaceCount] == ' ') {
                     spaceCount++;
                 }
-                
+
                 indentLevel = spaceCount / 2; // 2 spaces per indent level
-                
+
                 QRegularExpression orderedListRegex(R"(^(\d+)\.\s+(.+)$)");
                 QRegularExpressionMatch match = orderedListRegex.match(trimmedLine);
-                
+
                 if (match.hasMatch()) {
                     QString number = match.captured(1);
                     QString content = match.captured(2);
-                    
+
                     // Generate proper indentation for nested lists
                     QString indent = "";
                     for (int j = 0; j < indentLevel; j++) {
                         indent += "  ";
                     }
-                    
+
                     processedContentLines << indent + "<li>" + content + "</li>";
                 } else {
                     processedContentLines << line;
@@ -489,21 +651,21 @@ void MainWindow::toggleEditMode()
                 processedContentLines << line;
             }
         }
-        
+
         content = processedContentLines.join("\n");
-        
+
         // Now wrap consecutive list items in proper ul/ol tags
         QStringList finalLines = content.split("\n");
         QStringList resultLines;
         int idx = 0;
-        
+
         while (idx < finalLines.size()) {
             QString line = finalLines[idx];
-            
+
             if (line.contains("<li>")) {
                 // Determine if this is part of an ordered or unordered list
                 bool isOrdered = false;
-                
+
                 // Check if this looks like an ordered list by looking at the original markdown
                 // For now, we'll determine this by checking the context
                 if (idx > 0 && finalLines[idx-1].contains("<ol>")) {
@@ -515,49 +677,49 @@ void MainWindow::toggleEditMode()
                     int nextIdx = idx;
                     bool hasOrdered = false;
                     bool hasUnordered = false;
-                    
+
                     while (nextIdx < finalLines.size() && finalLines[nextIdx].contains("<li>")) {
                         // Check if this line originally had an ordered list marker
                         // Since we've already converted, we need to infer from context
                         hasOrdered = true; // Default assumption for now
                         nextIdx++;
                     }
-                    
+
                     // For simplicity, let's assume unordered if we can't determine
                     isOrdered = false;
                 }
-                
+
                 // Collect all consecutive list items
                 QString listTag = isOrdered ? "<ol>" : "<ul>";
                 QString endTag = isOrdered ? "</ol>" : "</ul>";
-                
+
                 resultLines << listTag;
                 resultLines << line;
-                
+
                 idx++;
                 while (idx < finalLines.size() && finalLines[idx].contains("<li>")) {
                     resultLines << finalLines[idx];
                     idx++;
                 }
-                
+
                 resultLines << endTag;
             } else {
                 resultLines << line;
                 idx++;
             }
         }
-        
+
         content = resultLines.join("\n");
-        
+
         // Code blocks (indented with 4 spaces or a tab)
         // Process code blocks by identifying lines that start with 4 spaces or a tab
         QStringList codeLines = content.split("\n");
         QStringList processedCodeLines;
         bool inCodeBlock = false;
-        
+
         for (int i = 0; i < codeLines.size(); i++) {
             QString line = codeLines[i];
-            
+
             // Check if the line starts with 4 spaces or a tab
             if (line.startsWith("    ") || line.startsWith("\t")) {
                 if (!inCodeBlock) {
@@ -577,14 +739,14 @@ void MainWindow::toggleEditMode()
                 processedCodeLines << line;
             }
         }
-        
+
         // Close any remaining open code block
         if (inCodeBlock) {
             processedCodeLines << "</code></pre>";
         }
-        
+
         content = processedCodeLines.join("\n");
-        
+
         // Horizontal rules
         content.replace(QRegularExpression(R"(^(\* \*){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
         content.replace(QRegularExpression(R"(^(\*\*){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
@@ -592,11 +754,11 @@ void MainWindow::toggleEditMode()
         content.replace(QRegularExpression(R"(^(-){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
         content.replace(QRegularExpression(R"(^(_ ){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
         content.replace(QRegularExpression(R"(^(_){3,}$)", QRegularExpression::MultilineOption), R"(<hr>)");
-        
+
         // Images - Fixed regex patterns to avoid illegal escape sequences
         content.replace(QRegularExpression(R"(!\[([^\]]*)\]\(([^)]+)\))"), QString("<img src=\"%2\" alt=\"%1\" />"));
         content.replace(QRegularExpression(R"(!\[([^\]]*)\]\(([^)]+)\s+\"([^\"]+)\"\))"), QString("<img src=\"%2\" alt=\"%1\" title=\"%3\" />"));
-        
+
         // Standard links
         content.replace(QRegularExpression(R"(\[([^\]]+)\]\(([^)]+)\))"), QString("<a href=\"%2\">%1</a>"));
         // Wiki-links
@@ -647,19 +809,24 @@ void MainWindow::handleLinkNavigation(const QString &link) {
 
     if (m_currentVaultPath.isEmpty()) return;
 
-    // Construct the full path for the local markdown file
-    QString newFilePath = finalLink.endsWith(".md")
-        ? m_currentVaultPath + "/" + finalLink
-        : m_currentVaultPath + "/" + finalLink + ".md";
+    // First, try to find the file anywhere in the vault
+    QString filePath = findFileInVault(finalLink);
+    
+    if (!filePath.isEmpty()) {
+        // File exists somewhere in the vault
+        if (maybeSave()) {
+            loadFile(filePath);
+        }
+    } else {
+        // File doesn't exist, ask the user if they want to create it in the root
+        QString newFilePath = finalLink.endsWith(".md")
+            ? m_currentVaultPath + "/" + finalLink
+            : m_currentVaultPath + "/" + finalLink + ".md";
 
-    QFileInfo fileInfo(newFilePath);
-
-    // If the file doesn't exist, ask the user if they want to create it.
-    if (!fileInfo.exists()) {
         auto reply = QMessageBox::question(
             this,
             "Crear archivo",
-            "El archivo '" + fileInfo.fileName() + "' no existe.\n¿Quieres crearlo?",
+            "El archivo '" + QFileInfo(newFilePath).fileName() + "' no existe.\n¿Quieres crearlo en la carpeta raíz?",
             QMessageBox::Yes | QMessageBox::No
         );
 
@@ -678,10 +845,125 @@ void MainWindow::handleLinkNavigation(const QString &link) {
                 QMessageBox::warning(this, "Error", "No se pudo crear el archivo.");
             }
         }
-    } else {
-        // If the file exists, just try to save the current one and then load it.
-        if (maybeSave()) {
-            loadFile(newFilePath);
+    }
+}
+
+QString MainWindow::findFileInVault(const QString &fileName)
+{
+    if (m_currentVaultPath.isEmpty()) return QString();
+    
+    QString searchName = fileName;
+    if (!searchName.endsWith(".md")) {
+        searchName += ".md";
+    }
+    
+    // Check if the exact file exists
+    QString fullPath = m_currentVaultPath + "/" + searchName;
+    if (QFile::exists(fullPath)) {
+        return fullPath;
+    }
+    
+    // Search recursively in all subdirectories
+    QDirIterator it(m_currentVaultPath, QStringList() << searchName, QDir::Files, QDirIterator::Subdirectories);
+    if (it.hasNext()) {
+        return it.next();
+    }
+    
+    // Also try without .md extension
+    QString baseName = searchName.left(searchName.length() - 3); // Remove .md
+    QDirIterator it2(m_currentVaultPath, QStringList() << baseName + ".*", QDir::Files, QDirIterator::Subdirectories);
+    if (it2.hasNext()) {
+        QString path = it2.next();
+        if (path.endsWith(".md")) {
+            return path;
+        }
+    }
+    
+    return QString(); // Not found
+}
+
+void MainWindow::setupAutoCompletion()
+{
+    // Initialize the completer with an empty model initially
+    m_completer = new QCompleter(this);
+    m_completer->setModel(new QStringListModel(m_markdownFiles, m_completer));
+    m_completer->setCaseSensitivity(Qt::CaseInsensitive);
+    m_completer->setCompletionMode(QCompleter::PopupCompletion);
+    
+    // Connect the completer to the text edit
+    m_completer->setWidget(m_textEdit);
+    connect(m_completer, QOverload<const QString &>::of(&QCompleter::activated),
+            this, &MainWindow::insertCompletion);
+}
+
+void MainWindow::insertCompletion(const QString &completion)
+{
+    if (m_completer->widget() != m_textEdit) return;
+    
+    QTextCursor tc = m_textEdit->textCursor();
+    int extra = completion.length() - m_completer->completionPrefix().length();
+    tc.movePosition(QTextCursor::Left);
+    tc.movePosition(QTextCursor::EndOfWord);
+    tc.insertText(completion.right(extra));
+    
+    m_textEdit->setTextCursor(tc);
+}
+
+QStringList MainWindow::getMarkdownFileNames()
+{
+    QStringList fileNames;
+    if (!m_currentVaultPath.isEmpty()) {
+        QDirIterator it(m_currentVaultPath, QStringList() << "*.md", QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            QString filePath = it.next();
+            QFileInfo fileInfo(filePath);
+            QString baseName = fileInfo.baseName();
+            fileNames << baseName;
+        }
+    }
+    return fileNames;
+}
+
+void MainWindow::updateAutoCompletionModel()
+{
+    m_markdownFiles = getMarkdownFileNames();
+    QStringListModel *model = new QStringListModel(m_markdownFiles, m_completer);
+    m_completer->setModel(model);
+}
+
+void MainWindow::showAutoCompletePopup(const QString &prefix)
+{
+    if (m_completer->completionCount() > 0) {
+        m_completer->setCompletionPrefix(prefix);
+        m_completer->complete();
+    }
+}
+
+void MainWindow::onTextChanged()
+{
+    if (!m_isEditMode) return; // Only in edit mode
+    
+    QTextCursor cursor = m_textEdit->textCursor();
+    int position = cursor.position();
+    
+    // Get the text up to the current cursor position
+    QString text = m_textEdit->toPlainText();
+    if (position <= 0 || position > text.length()) return;
+    
+    QString prefixText = text.left(position);
+    
+    // Check if we're in a [[...]] context
+    int bracketPos = prefixText.lastIndexOf("[[");
+    if (bracketPos != -1) {
+        // Extract the text after the [[
+        QString completionPrefix = prefixText.mid(bracketPos + 2);
+        
+        // Update the completion model with current files
+        updateAutoCompletionModel();
+        
+        // Show the autocompletion popup if there's a prefix to match
+        if (!completionPrefix.isEmpty()) {
+            showAutoCompletePopup(completionPrefix);
         }
     }
 }
@@ -718,21 +1000,148 @@ void MainWindow::showHelpDialog()
 
 // --- Rest of the functions ---
 void MainWindow::openFile() { if(maybeSave()){QString fp=QFileDialog::getOpenFileName(this,"Abrir",m_currentVaultPath,"*.md");if(!fp.isEmpty())loadFile(fp);}}
-void MainWindow::openVault(const QString &path){QString d=path.isEmpty()?QFileDialog::getExistingDirectory(this,"Abrir Vault"):path;if(!d.isEmpty()){m_currentVaultPath=d;m_fileSystemModel->setRootPath(d);m_treeView->setRootIndex(m_proxyModel->mapFromSource(m_fileSystemModel->index(d)));}}
-void MainWindow::closeVault(){if(maybeSave()){m_currentVaultPath.clear();m_currentFilePath.clear();m_fileSystemModel->setRootPath("");m_textEdit->clear();m_rawMarkdownBuffer.clear();setWindowTitle("ME[*]");m_textEdit->document()->setModified(false);updateStatusBar();}}
-void MainWindow::onFileClicked(const QModelIndex &idx){if(!idx.isValid())return;auto sIdx=m_proxyModel->mapToSource(idx);QString fp=m_fileSystemModel->filePath(sIdx);if(m_fileSystemModel->isDir(sIdx)||fp.isEmpty())return;if(maybeSave())loadFile(fp);}
-bool MainWindow::loadFile(const QString& fp,bool addHist){QFile f(fp);if(!f.open(QIODevice::ReadOnly|QIODevice::Text))return false;m_currentFilePath=fp;QTextStream in(&f);m_rawMarkdownBuffer=in.readAll();m_textEdit->setPlainText(m_rawMarkdownBuffer);f.close();if(!m_isEditMode){m_isEditMode=true;toggleEditMode();m_isEditMode=true;}
-m_textEdit->setPlainText(m_rawMarkdownBuffer);
-m_textEdit->document()->setModified(false);setWindowTitle(QFileInfo(fp).fileName()+" - ME[*]");updateStatusBar();if(addHist){if(m_historyIndex>=0&&m_historyIndex<m_fileHistory.size()-1)m_fileHistory=m_fileHistory.mid(0,m_historyIndex+1);if(m_fileHistory.isEmpty()||m_fileHistory.last()!=fp)m_fileHistory.append(fp);m_historyIndex=m_fileHistory.size()-1;}m_historyBackButton->setEnabled(m_historyIndex>0);m_historyForwardButton->setEnabled(m_historyIndex<m_fileHistory.size()-1);return true;}
-void MainWindow::saveFile(){if(m_currentFilePath.isEmpty()){QString fp=QFileDialog::getOpenFileName(this,"Guardar",m_currentVaultPath,"*.md");if(fp.isEmpty())return;m_currentFilePath=fp;}QFile f(m_currentFilePath);if(!f.open(QIODevice::WriteOnly|QIODevice::Text))return;QTextStream out(&f);QString c=m_isEditMode?m_textEdit->toPlainText():m_rawMarkdownBuffer;out<<c;f.close();if(m_isEditMode)m_rawMarkdownBuffer=c;m_textEdit->document()->setModified(false);setWindowTitle(QFileInfo(m_currentFilePath).fileName()+" - ME[*]");}
-void MainWindow::onDocumentModified(){setWindowModified(m_textEdit->document()->isModified());}
-bool MainWindow::maybeSave(){if(!m_textEdit->document()->isModified())return true;auto r=QMessageBox::warning(this,"Guardar","Cambios sin guardar",QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel);if(r==QMessageBox::Save){saveFile();return!m_textEdit->document()->isModified();}if(r==QMessageBox::Cancel)return false;return true;}
-void MainWindow::updateStatusBar(){m_filePathLabel->setText(m_currentFilePath.isEmpty() ? "" : m_currentFilePath);QString t=m_isEditMode?m_textEdit->toPlainText():m_rawMarkdownBuffer;m_wordCountLabel->setText(QString("%1w").arg(t.split(QRegularExpression("\\s+"),Qt::SkipEmptyParts).count()));}
-void MainWindow::historyBack(){if(m_historyIndex>0&&maybeSave()){m_historyIndex--;loadFile(m_fileHistory[m_historyIndex],false);}}
-void MainWindow::historyForward(){if(m_historyIndex<m_fileHistory.size()-1&&maybeSave()){m_historyIndex++;loadFile(m_fileHistory[m_historyIndex],false);}}
-void MainWindow::closeEvent(QCloseEvent *e){if(maybeSave()){saveSettings();e->accept();}else{e->ignore();}}
-void MainWindow::saveSettings(){QSettings s("MS","ME");s.beginGroup("MW");s.setValue("g",saveGeometry());s.setValue("s",saveState());s.endGroup();s.beginGroup("ED");s.setValue("f",m_textEdit->font());s.setValue("vp",m_currentVaultPath);s.setValue("th",m_currentThemeName);s.endGroup();}
-void MainWindow::loadSettings(){QSettings s("MS","ME");s.beginGroup("MW");restoreGeometry(s.value("g").toByteArray());restoreState(s.value("s").toByteArray());s.endGroup();s.beginGroup("ED");m_textEdit->setFont(s.value("f",QFont("JetBrains Mono")).value<QFont>());QString th=s.value("th","Tokyo Night").toString();applyTheme(th);QString lv=s.value("vp","").toString();if(!lv.isEmpty()&&QDir(lv).exists())openVault(lv);s.endGroup();}
+void MainWindow::openVault(const QString &path){
+    QString d=path.isEmpty()?QFileDialog::getExistingDirectory(this,"Abrir Vault"):path;
+    if(!d.isEmpty()){
+        m_currentVaultPath=d;
+        m_fileSystemModel->setRootPath(d);
+        m_treeView->setRootIndex(m_proxyModel->mapFromSource(m_fileSystemModel->index(d)));
+        
+        // Load the default file if it exists
+        if (!m_defaultVaultFile.isEmpty() && QFile::exists(m_defaultVaultFile)) {
+            loadFile(m_defaultVaultFile);
+        }
+    }
+}
+void MainWindow::closeVault(){
+    if(maybeSave()){
+        m_currentVaultPath.clear();
+        m_currentFilePath.clear();
+        m_fileSystemModel->setRootPath("");
+        m_textEdit->clear();
+        m_rawMarkdownBuffer.clear();
+        setWindowTitle("ME[*]");
+        m_textEdit->document()->setModified(false);
+        updateStatusBar();
+    }
+}
+void MainWindow::onFileClicked(const QModelIndex &idx){
+    if(!idx.isValid())return;
+    auto sIdx=m_proxyModel->mapToSource(idx);
+    QString fp=m_fileSystemModel->filePath(sIdx);
+    if(m_fileSystemModel->isDir(sIdx)||fp.isEmpty())return;
+    if(maybeSave())loadFile(fp);
+}
+bool MainWindow::loadFile(const QString& fp,bool addHist){
+    QFile f(fp);
+    if(!f.open(QIODevice::ReadOnly|QIODevice::Text))return false;
+    m_currentFilePath=fp;
+    QTextStream in(&f);
+    m_rawMarkdownBuffer=in.readAll();
+    m_textEdit->setPlainText(m_rawMarkdownBuffer);
+    f.close();
+    if(!m_isEditMode){
+        m_isEditMode=true;
+        toggleEditMode();
+        m_isEditMode=true;
+    }
+    m_textEdit->setPlainText(m_rawMarkdownBuffer);
+    m_textEdit->document()->setModified(false);
+    setWindowTitle(QFileInfo(fp).fileName()+" - ME[*]");
+    updateStatusBar();
+    if(addHist){
+        if(m_historyIndex>=0&&m_historyIndex<m_fileHistory.size()-1)
+            m_fileHistory=m_fileHistory.mid(0,m_historyIndex+1);
+        if(m_fileHistory.isEmpty()||m_fileHistory.last()!=fp)
+            m_fileHistory.append(fp);
+        m_historyIndex=m_fileHistory.size()-1;
+    }
+    m_historyBackButton->setEnabled(m_historyIndex>0);
+    m_historyForwardButton->setEnabled(m_historyIndex<m_fileHistory.size()-1);
+    return true;
+}
+void MainWindow::saveFile(){
+    if(m_currentFilePath.isEmpty()){
+        QString fp=QFileDialog::getSaveFileName(this,"Guardar",m_currentVaultPath,"*.md");
+        if(fp.isEmpty())return;
+        m_currentFilePath=fp;
+    }
+    QFile f(m_currentFilePath);
+    if(!f.open(QIODevice::WriteOnly|QIODevice::Text))return;
+    QTextStream out(&f);
+    QString c=m_isEditMode?m_textEdit->toPlainText():m_rawMarkdownBuffer;
+    out<<c;
+    f.close();
+    if(m_isEditMode)m_rawMarkdownBuffer=c;
+    m_textEdit->document()->setModified(false);
+    setWindowTitle(QFileInfo(m_currentFilePath).fileName()+" - ME[*]");
+}
+void MainWindow::onDocumentModified(){
+    setWindowModified(m_textEdit->document()->isModified());
+}
+bool MainWindow::maybeSave(){
+    if(!m_textEdit->document()->isModified())return true;
+    auto r=QMessageBox::warning(this,"Guardar","Cambios sin guardar",QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel);
+    if(r==QMessageBox::Save){
+        saveFile();
+        return!m_textEdit->document()->isModified();
+    }
+    if(r==QMessageBox::Cancel)return false;
+    return true;
+}
+void MainWindow::updateStatusBar(){
+    m_filePathLabel->setText(m_currentFilePath.isEmpty() ? "" : m_currentFilePath);
+    QString t=m_isEditMode?m_textEdit->toPlainText():m_rawMarkdownBuffer;
+    m_wordCountLabel->setText(QString("%1w").arg(t.split(QRegularExpression("\\s+"),Qt::SkipEmptyParts).count()));
+}
+void MainWindow::historyBack(){
+    if(m_historyIndex>0&&maybeSave()){
+        m_historyIndex--;
+        loadFile(m_fileHistory[m_historyIndex],false);
+    }
+}
+void MainWindow::historyForward(){
+    if(m_historyIndex<m_fileHistory.size()-1&&maybeSave()){
+        m_historyIndex++;
+        loadFile(m_fileHistory[m_historyIndex],false);
+    }
+}
+void MainWindow::closeEvent(QCloseEvent *e){
+    if(maybeSave()){
+        saveSettings();
+        e->accept();
+    }else{
+        e->ignore();
+    }
+}
+void MainWindow::saveSettings(){
+    QSettings s("MS","ME");
+    s.beginGroup("MW");
+    s.setValue("g",saveGeometry());
+    s.setValue("s",saveState());
+    s.endGroup();
+    s.beginGroup("ED");
+    s.setValue("f",m_textEdit->font());
+    s.setValue("vp",m_currentVaultPath);
+    s.setValue("th",m_currentThemeName);
+    s.setValue("dvf",m_defaultVaultFile); // Save default vault file
+    s.endGroup();
+}
+void MainWindow::loadSettings(){
+    QSettings s("MS","ME");
+    s.beginGroup("MW");
+    restoreGeometry(s.value("g").toByteArray());
+    restoreState(s.value("s").toByteArray());
+    s.endGroup();
+    s.beginGroup("ED");
+    m_textEdit->setFont(s.value("f",QFont("JetBrains Mono")).value<QFont>());
+    QString th=s.value("th","Tokyo Night").toString();
+    applyTheme(th);
+    QString lv=s.value("vp","").toString();
+    m_defaultVaultFile = s.value("dvf", "").toString(); // Load default vault file
+    if(!lv.isEmpty()&&QDir(lv).exists())openVault(lv);
+    s.endGroup();
+}
 
 void MainWindow::setupThemes() {
     m_themes.clear();
