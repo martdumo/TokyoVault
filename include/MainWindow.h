@@ -3,12 +3,7 @@
 #include <QMainWindow>
 #include <QModelIndex>
 #include <QTextDocument>
-#include <QColor>
-#include <QMap>
-#include <QUrl>
-#include <QStringListModel>
-#include <QCompleter>
-#include <QDirIterator>
+#include <memory> // For std::unique_ptr
 
 // Forward declarations
 class QSplitter;
@@ -29,12 +24,7 @@ class MarkdownHighlighter;
 class FindReplaceDialog;
 class SearchWorker;
 class QCompleter;
-
-struct Theme {
-    QString name;
-    QColor windowBg, editorBg, textFg, mutedFg, accent;
-    QColor heading, link, code, bold, italic, quoteBg;
-};
+class EditorStyler; // Forward-declare the new class
 
 class MainWindow : public QMainWindow
 {
@@ -59,12 +49,12 @@ private slots:
     void closeVault();
     void showFindReplaceDialog();
     void showFontDialog();
-    void applyTheme(const QString &themeName);
+    void applyTheme(QAction* action); // Modified to take QAction
     void showHelpDialog();
 
     // --- Search ---
-    void filterVault(); // Slot connected to search bar text changes, starts the debounce timer
-    void startContentSearch(); // Slot connected to timer, executes the search
+    void filterVault(); 
+    void startContentSearch();
     void handleSearchResults(const QStringList &matchingFiles);
 
     // --- State & Navigation ---
@@ -78,47 +68,37 @@ private slots:
     void replaceInEditor(const QString &findText, const QString &replaceText, QTextDocument::FindFlags flags);
     void replaceAllInEditor(const QString &findText, const QString &replaceText, QTextDocument::FindFlags flags);
 
-    // --- Formatting ---
-    void insertTableTemplate();
-    void insertLinkTemplate();
-    void insertImageTemplate();
-    void applyBold();
-    void applyItalic();
-    void applyUnderline();
-
-    // --- New features ---
+    // --- Vault/File Management ---
     void createFolder();
     void setDefaultFile();
     void updateLinksAfterRename(const QString &oldName, const QString &newName);
     void deleteFileOrFolder();
+    void showRenameDialog();
     
     // --- Autocompletion features ---
-    void setupAutoCompletion();
-    void insertCompletion(const QString &completion);
-    QStringList getMarkdownFileNames();
-    void showAutoCompletePopup(const QString &prefix);
-    void updateAutoCompletionModel();
     void onTextChanged();
     void onTreeContextMenu(const QPoint &pos);
-    void showRenameDialog();
+    void insertCompletion(const QString &completion);
+    void showAutoCompletePopup(const QString &prefix);
 
 private:
     void createMenus();
     void createToolBar();
     void createStatusBar();
     void setupUI();
-    void setupThemes();
     void setupSearchThread();
     bool loadFile(const QString& filePath, bool addToHistory = true);
     void saveSettings();
     void loadSettings();
-    void applyTextFormatting(const QString& prefix, const QString& suffix = "");
     bool maybeSave();
     
-    // New helper methods
+    // --- Autocompletion Helpers ---
+    void setupAutoCompletion();
+    void updateAutoCompletionModel();
+    QStringList getMarkdownFileNames();
+    
+    // --- Other Helpers ---
     QString findFileInVault(const QString &fileName);
-    void updateAllLinksInVault(const QString &oldLink, const QString &newLink);
-    QStringList getAllMarkdownFilesInVault();
 
     // UI Widgets
     QSplitter *m_mainSplitter;
@@ -155,8 +135,8 @@ private:
     // Dialogs
     FindReplaceDialog *m_findReplaceDialog;
 
-    // Theming
-    QMap<QString, Theme> m_themes;
+    // Theming & Styling
+    std::unique_ptr<EditorStyler> m_styler;
     QString m_currentThemeName;
     
     // Default file for vault

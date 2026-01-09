@@ -15,14 +15,10 @@ set(CMAKE_AUTOUIC ON)
 
 # --- Configuración Específica del Entorno ---
 if(WIN32)
-    # En Windows, especificamos la ruta a vcpkg y Qt.
-    # Asegúrate de que estas rutas coincidan con tu sistema.
     set(CMAKE_TOOLCHAIN_FILE "F:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
     set(CMAKE_PREFIX_PATH "F:/Qt/6.10.1/msvc2022_64" CACHE PATH "Qt installation directory")
 else()
-    # En otros sistemas (como Linux), dejamos que CMake busque Qt en las rutas estándar.
-    # No es necesario especificar CMAKE_PREFIX_PATH si Qt está instalado a través del 
-    # gestor de paquetes del sistema (por ejemplo, pacman, apt).
+    # En otros sistemas, CMake buscará Qt en las rutas estándar.
 endif()
 
 # Busca el paquete de Qt6.
@@ -39,11 +35,13 @@ set(SOURCES
     src/MarkdownTextEdit.cpp
     src/FindReplaceDialog.cpp
     src/SearchWorker.cpp
+    src/EditorStyler.cpp
     include/MainWindow.h
     include/MarkdownHighlighter.h
     include/MarkdownTextEdit.h
     include/FindReplaceDialog.h
     include/SearchWorker.h
+    include/EditorStyler.h
     resources.qrc
 )
 
