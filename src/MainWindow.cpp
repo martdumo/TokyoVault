@@ -172,6 +172,26 @@ void MainWindow::createToolBar()
     m_toggleButton->setText("Preview Mode");
     connect(m_toggleButton, &QToolButton::clicked, this, &MainWindow::toggleEditMode);
     toolbar->addWidget(m_toggleButton);
+
+    // Format buttons
+    toolbar->addSeparator();
+    QToolButton *boldButton = new QToolButton(this);
+    boldButton->setText("N");
+    boldButton->setToolTip("Negrita (Ctrl+B)");
+    connect(boldButton, &QToolButton::clicked, this, [this](){ applyFormat("**", "**"); });
+    toolbar->addWidget(boldButton);
+
+    QToolButton *italicButton = new QToolButton(this);
+    italicButton->setText("I");
+    italicButton->setToolTip("Itálica (Ctrl+I)");
+    connect(italicButton, &QToolButton::clicked, this, [this](){ applyFormat("*", "*"); });
+    toolbar->addWidget(italicButton);
+
+    QToolButton *codeButton = new QToolButton(this);
+    codeButton->setText("C");
+    codeButton->setToolTip("Código (Ctrl+`)");
+    connect(codeButton, &QToolButton::clicked, this, [this](){ applyFormat("`", "`"); });
+    toolbar->addWidget(codeButton);
 }
 
 void MainWindow::createStatusBar()
@@ -229,6 +249,8 @@ void MainWindow::onDocumentModified() { setWindowModified(m_textEdit->document()
 void MainWindow::applyTheme(QAction* action) {
     if (!action) return;
     m_currentThemeName = action->data().toString();
+    Theme theme = m_styler->getThemes().value(m_currentThemeName);
+    m_highlighter->setTheme(theme);
     m_styler->applyTheme(m_currentThemeName, qApp, m_highlighter);
     if (!m_isEditMode) {
         toggleEditMode();
@@ -503,6 +525,23 @@ QStringList MainWindow::getMarkdownFileNames() { QStringList fileNames; if (!m_c
 void MainWindow::updateAutoCompletionModel() { m_markdownFiles = getMarkdownFileNames(); static_cast<QStringListModel*>(m_completer->model())->setStringList(m_markdownFiles); }
 void MainWindow::showAutoCompletePopup(const QString &prefix) { if (m_completer->completionCount() > 0) { m_completer->setCompletionPrefix(prefix); m_completer->complete(); } }
 void MainWindow::onTextChanged() { if (!m_isEditMode) return; QTextCursor cursor = m_textEdit->textCursor(); int pos = cursor.position(); QString text = m_textEdit->toPlainText(); if (pos <= 0 || pos > text.length()) return; QString prefix = text.left(pos); int bracketPos = prefix.lastIndexOf("[["); if (bracketPos != -1) { QString completionPrefix = prefix.mid(bracketPos + 2); updateAutoCompletionModel(); if (!completionPrefix.isEmpty()) showAutoCompletePopup(completionPrefix); } }
+
+void MainWindow::applyFormat(const QString &prefix, const QString &suffix) {
+    if (!m_isEditMode) return;
+
+    QTextCursor cursor = m_textEdit->textCursor();
+    QString selectedText = cursor.selectedText();
+
+    if (selectedText.isEmpty()) {
+        // If no text is selected, just insert the format markers and position cursor between them
+        cursor.insertText(prefix + suffix);
+        cursor.movePosition(QTextCursor::PreviousCharacter, QTextCursor::MoveAnchor, suffix.length());
+        m_textEdit->setTextCursor(cursor);
+    } else {
+        // If text is selected, wrap it with the format markers
+        cursor.insertText(prefix + selectedText + suffix);
+    }
+}
 
 QStringList MainWindow::getAllMarkdownFilesInVault() {
     QStringList filePaths;

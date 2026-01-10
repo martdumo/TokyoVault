@@ -68,6 +68,7 @@ private slots:
     void onTreeContextMenu(const QPoint &pos);
     void insertCompletion(const QString &completion);
     void showAutoCompletePopup(const QString &prefix);
+    void applyFormat(const QString &prefix, const QString &suffix);
 
 private:
     void createMenus();
