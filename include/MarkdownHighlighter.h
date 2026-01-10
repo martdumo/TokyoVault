@@ -4,16 +4,12 @@
 #include <QRegularExpression>
 #include <QTextCharFormat>
 
-// Forward-declare para evitar dependencia circular con MainWindow.h
-struct Theme;
-
 class MarkdownHighlighter : public QSyntaxHighlighter
 {
     Q_OBJECT
 
 public:
     explicit MarkdownHighlighter(QTextDocument *parent = nullptr);
-    void setTheme(const Theme &theme);
 
 protected:
     void highlightBlock(const QString &text) override;

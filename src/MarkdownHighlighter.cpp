@@ -1,5 +1,4 @@
 #include "MarkdownHighlighter.h"
-#include "EditorStyler.h"
 
 #include <QTextDocument>
 #include <QBrush>
@@ -9,32 +8,30 @@
 MarkdownHighlighter::MarkdownHighlighter(QTextDocument *parent)
     : QSyntaxHighlighter(parent)
 {
+    // Hardcoded Tokyo Night colors
     m_headerFormat.setFontWeight(QFont::Bold);
-    m_boldFormat.setFontWeight(QFont::Bold);
-    m_italicFormat.setFontItalic(true);
+    m_headerFormat.setForeground(QColor("#bb9af7")); // Tokyo Night heading color
+
+    m_linkFormat.setForeground(QColor("#7aa2f7")); // Tokyo Night accent color
 
     m_codeFormat.setFontFamilies({"JetBrains Mono", "Consolas", "monospace"});
+    m_codeFormat.setForeground(QColor("#9ece6a")); // Tokyo Night code color
+
+    m_boldFormat.setFontWeight(QFont::Bold);
+    m_boldFormat.setForeground(QColor("#ff9e64")); // Tokyo Night bold color
+
+    m_italicFormat.setFontItalic(true);
+    m_italicFormat.setForeground(QColor("#c0caf5")); // Tokyo Night text color
+
+    m_quoteFormat.setBackground(QColor("#2a2e42")); // Tokyo Night quote background
+    m_quoteFormat.setForeground(QColor("#565f89")); // Tokyo Night muted foreground
+
     m_multiLineCodeFormat.setFontFamilies({"JetBrains Mono", "Consolas", "monospace"});
+    m_multiLineCodeFormat.setForeground(QColor("#9ece6a")); // Tokyo Night code color
+    m_multiLineCodeFormat.setBackground(QColor("#24283b").darker(110)); // Tokyo Night editor background darkened
 
     m_codeBlockStartExpression = QRegularExpression(R"(^```)");
     m_codeBlockEndExpression = QRegularExpression(R"(^```$)");
-}
-
-void MarkdownHighlighter::setTheme(const Theme &theme)
-{
-    m_headerFormat.setForeground(theme.heading);
-    m_linkFormat.setForeground(theme.accent);
-    m_codeFormat.setForeground(theme.code);
-    m_boldFormat.setForeground(theme.bold);
-    m_italicFormat.setForeground(theme.italic);
-
-    m_quoteFormat.setBackground(theme.quoteBg);
-    m_quoteFormat.setForeground(theme.mutedFg);
-
-    m_multiLineCodeFormat.setForeground(theme.code);
-    m_multiLineCodeFormat.setBackground(theme.editorBg.darker(110));
-
-    rehighlight();
 }
 
 void MarkdownHighlighter::highlightBlock(const QString &text)

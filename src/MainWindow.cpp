@@ -55,6 +55,24 @@ MainWindow::MainWindow(QWidget *parent)
     setMinimumSize(900, 700);
     resize(1400, 900);
 
+    // Hardcoded Tokyo Night theme
+    QString styleSheet = QString(
+        "QMainWindow,QDialog{background-color:#1a1b26;color:#c0caf5;}"
+        "QMenuBar{background-color:#1a1b26;color:#c0caf5;}"
+        "QMenuBar::item:selected{background-color:#7aa2f7;color:#24283b;}"
+        "QMenu{background-color:#24283b;color:#c0caf5;border:1px solid #565f89;}"
+        "QToolBar{background-color:#1a1b26;border:none;}"
+        "QToolButton{color:#c0caf5;background-color:transparent;border:1px solid #565f89;padding:4px;border-radius:4px;}"
+        "QStatusBar{color:#c0caf5;background-color:#1a1b26;}"
+        "QTreeView{background-color:#1a1b26;color:#c0caf5;border:none;}"
+        "QLineEdit{background-color:#24283b;color:#c0caf5;border:1px solid #565f89;border-radius:4px;padding:4px;}"
+        "QTextEdit{background-color:#24283b;color:#c0caf5;border:none;margin-left:25px;padding-top:10px;}"
+        "QTextEdit a{color:#7aa2f7;text-decoration:underline;}"
+        "QScrollBar:vertical{background:#1a1b26;width:10px;margin:0;}"
+        "QScrollBar::handle:vertical{background:#565f89;min-height:20px;border-radius:5px;}"
+    );
+    qApp->setStyleSheet(styleSheet);
+
     m_styler = std::make_unique<EditorStyler>();
 
     createMenus();
@@ -125,17 +143,6 @@ void MainWindow::createMenus()
     QAction *fontAction = new QAction("Cambiar &Fuente...", this);
     connect(fontAction, &QAction::triggered, this, &MainWindow::showFontDialog);
     customizeMenu->addAction(fontAction);
-    customizeMenu->addSeparator();
-    QMenu *themesMenu = customizeMenu->addMenu("&Temas");
-    QActionGroup *themeActionGroup = new QActionGroup(this);
-    for (const QString &themeName : m_styler->getThemes().keys()) {
-        QAction *action = new QAction(themeName, this);
-        action->setCheckable(true);
-        action->setData(themeName);
-        themesMenu->addAction(action);
-        themeActionGroup->addAction(action);
-    }
-    connect(themeActionGroup, &QActionGroup::triggered, this, &MainWindow::applyTheme);
 
     QMenu *helpMenu = menuBar()->addMenu("&Ayuda");
     QAction *guideAction = new QAction("&Guía de Markdown", this);
@@ -177,7 +184,6 @@ void MainWindow::createToolBar()
     connect(m_toggleButton, &QToolButton::clicked, this, &MainWindow::toggleEditMode);
     toolbar->addWidget(m_toggleButton);
 
-    // Format buttons
     toolbar->addSeparator();
     QToolButton *boldButton = new QToolButton(this);
     boldButton->setText("N");
@@ -250,17 +256,6 @@ void MainWindow::setupUI()
 
 void MainWindow::closeEvent(QCloseEvent *event) { if (maybeSave()) { saveSettings(); event->accept(); } else { event->ignore(); } }
 void MainWindow::onDocumentModified() { setWindowModified(m_textEdit->document()->isModified()); }
-void MainWindow::applyTheme(QAction* action) {
-    if (!action) return;
-    m_currentThemeName = action->data().toString();
-    Theme theme = m_styler->getThemes().value(m_currentThemeName);
-    m_highlighter->setTheme(theme);
-    m_styler->applyTheme(m_currentThemeName, qApp, m_highlighter);
-    if (!m_isEditMode) {
-        toggleEditMode();
-        toggleEditMode();
-    }
-}
 
 void MainWindow::newFile()
 {
@@ -321,6 +316,13 @@ void MainWindow::onFileClicked(const QModelIndex &idx){
     if(maybeSave())loadFile(fp);
 }
 bool MainWindow::loadFile(const QString& fp,bool addHist){
+    // Security File Guard: Check file size before opening
+    QFileInfo fileInfo(fp);
+    if (fileInfo.size() > 5 * 1024 * 1024) { // 5MB limit
+        QMessageBox::warning(this, "Archivo demasiado grande", "Archivo demasiado grande por seguridad (Límite 5MB)");
+        return false;
+    }
+
     QFile f(fp);
     if(!f.open(QIODevice::ReadOnly|QIODevice::Text))return false;
     m_currentFilePath=fp;
@@ -333,7 +335,7 @@ bool MainWindow::loadFile(const QString& fp,bool addHist){
         m_textEdit->setPlainText(m_rawMarkdownBuffer);
         m_highlighter->rehighlight();
     } else {
-        QString html = m_styler->renderMarkdown(m_rawMarkdownBuffer, m_textEdit->font(), m_currentThemeName);
+        QString html = m_styler->renderMarkdown(m_rawMarkdownBuffer, m_textEdit->font());
         m_textEdit->setHtml(html);
     }
     m_toggleButton->setText(m_isEditMode ? "Preview Mode" : "Edit Mode");
@@ -391,12 +393,12 @@ void MainWindow::toggleEditMode()
         m_toggleButton->setText("Edit Mode");
         m_highlighter->setDocument(nullptr);
         m_rawMarkdownBuffer = m_textEdit->toPlainText();
-        QString html = m_styler->renderMarkdown(m_rawMarkdownBuffer, m_textEdit->font(), m_currentThemeName);
+        QString html = m_styler->renderMarkdown(m_rawMarkdownBuffer, m_textEdit->font());
         m_textEdit->setReadOnly(true);
         m_textEdit->setHtml(html);
     }
     m_textEdit->document()->setModified(wasModified);
-    updateStatusBar(); // Update status bar when toggling modes
+    updateStatusBar();
 }
 
 void MainWindow::filterVault() { m_searchTimer->start(); }
@@ -465,7 +467,7 @@ void MainWindow::handleLinkNavigation(const QString &link) {
     if (finalLink.contains("://")) { QDesktopServices::openUrl(QUrl(finalLink)); return; }
     if (m_currentVaultPath.isEmpty()) return;
     QString filePath = findFileInVault(finalLink);
-    if (!filePath.isEmpty()) { if (maybeSave()) loadFile(filePath); } 
+    if (!filePath.isEmpty()) { if (maybeSave()) loadFile(filePath); }
     else {
         QString newFilePath = finalLink.endsWith(".md") ? m_currentVaultPath + "/" + finalLink : m_currentVaultPath + "/" + finalLink + ".md";
         auto reply = QMessageBox::question(this, "Crear archivo", "El archivo '" + QFileInfo(newFilePath).fileName() + "' no existe.\n¿Quieres crearlo?", QMessageBox::Yes | QMessageBox::No);
@@ -500,28 +502,20 @@ void MainWindow::showFindReplaceDialog() {
 void MainWindow::findNextInEditor(const QString &text, QTextDocument::FindFlags flags) { if (text.isEmpty() || !m_isEditMode) return; if (!m_textEdit->find(text, flags)) { if(QMessageBox::question(this, "Fin de la búsqueda", "¿Continuar desde el principio?", QMessageBox::Yes|QMessageBox::No) == QMessageBox::Yes) { QTextCursor cursor=m_textEdit->textCursor(); cursor.movePosition(QTextCursor::Start); m_textEdit->setTextCursor(cursor); m_textEdit->find(text, flags); } } }
 void MainWindow::replaceInEditor(const QString &findText, const QString &replaceText, QTextDocument::FindFlags flags) { if (findText.isEmpty() || !m_isEditMode) return; QTextCursor cursor = m_textEdit->textCursor(); if (cursor.hasSelection()) { if (cursor.selectedText() == findText || ((flags & QTextDocument::FindCaseSensitively)==0 && cursor.selectedText().compare(findText, Qt::CaseInsensitive)==0) ) cursor.insertText(replaceText); } findNextInEditor(findText, flags); }
 void MainWindow::replaceAllInEditor(const QString &findText, const QString &replaceText, QTextDocument::FindFlags flags) { if (findText.isEmpty() || !m_isEditMode) return; int count = 0; QTextCursor cursor = m_textEdit->textCursor(); cursor.movePosition(QTextCursor::Start); m_textEdit->setTextCursor(cursor); while(m_textEdit->find(findText, flags)) { m_textEdit->textCursor().insertText(replaceText); count++; } QMessageBox::information(this, "Reemplazar todo", QString("%1 coincidencias reemplazadas.").arg(count)); }
-void MainWindow::saveSettings() { QSettings s("MS","ME"); s.beginGroup("MW"); s.setValue("g",saveGeometry()); s.setValue("s",saveState()); s.endGroup(); s.beginGroup("ED"); s.setValue("f",m_textEdit->font()); s.setValue("vp",m_currentVaultPath); s.setValue("th",m_currentThemeName); s.setValue("dvf",m_defaultVaultFile); s.endGroup(); }
+void MainWindow::saveSettings() { QSettings s("MS","ME"); s.beginGroup("MW"); s.setValue("g",saveGeometry()); s.setValue("s",saveState()); s.endGroup(); s.beginGroup("ED"); s.setValue("f",m_textEdit->font()); s.setValue("vp",m_currentVaultPath); s.setValue("dvf",m_defaultVaultFile); s.endGroup(); }
 
-void MainWindow::loadSettings() { 
-    QSettings s("MS","ME"); 
-    s.beginGroup("MW"); 
-    restoreGeometry(s.value("g").toByteArray()); 
-    restoreState(s.value("s").toByteArray()); 
-    s.endGroup(); 
-    s.beginGroup("ED"); 
-    m_textEdit->setFont(s.value("f",QFont("JetBrains Mono")).value<QFont>()); 
-    QString th = s.value("th","Tokyo Night").toString(); 
-    m_currentThemeName = th; 
-    for(auto action : menuBar()->findChildren<QAction*>()) { 
-        if(action->data().toString() == th) { 
-            applyTheme(action); 
-            break; 
-        } 
-    } 
-    QString lv = s.value("vp","").toString(); 
-    m_defaultVaultFile = s.value("dvf", "").toString(); 
-    if(!lv.isEmpty() && QDir(lv).exists()) openVault(lv); 
-    s.endGroup(); 
+void MainWindow::loadSettings() {
+    QSettings s("MS","ME");
+    s.beginGroup("MW");
+    restoreGeometry(s.value("g").toByteArray());
+    restoreState(s.value("s").toByteArray());
+    s.endGroup();
+    s.beginGroup("ED");
+    m_textEdit->setFont(s.value("f",QFont("JetBrains Mono")).value<QFont>());
+    QString lv = s.value("vp","").toString();
+    m_defaultVaultFile = s.value("dvf", "").toString();
+    if(!lv.isEmpty() && QDir(lv).exists()) openVault(lv);
+    s.endGroup();
 }
 
 void MainWindow::setupAutoCompletion() { m_completer = new QCompleter(this); m_completer->setModel(new QStringListModel(m_markdownFiles, m_completer)); m_completer->setCaseSensitivity(Qt::CaseInsensitive); m_completer->setCompletionMode(QCompleter::PopupCompletion); m_completer->setWidget(m_textEdit); connect(m_completer, QOverload<const QString &>::of(&QCompleter::activated), this, &MainWindow::insertCompletion); }
@@ -531,12 +525,11 @@ void MainWindow::insertCompletion(const QString &completion) {
     int extra = completion.length() - m_completer->completionPrefix().length();
     tc.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor, m_completer->completionPrefix().length());
     tc.movePosition(QTextCursor::EndOfWord);
-    tc.insertText(completion.right(extra) + "]]"); // Add closing brackets
+    tc.insertText(completion.right(extra) + "]]");
     m_textEdit->setTextCursor(tc);
 }
 QStringList MainWindow::getMarkdownFileNames() { QStringList fileNames; if (!m_currentVaultPath.isEmpty()) { QDirIterator it(m_currentVaultPath, QStringList() << "*.md", QDir::Files, QDirIterator::Subdirectories); while (it.hasNext()) { fileNames << QFileInfo(it.next()).baseName(); } } return fileNames; }
 void MainWindow::updateAutoCompletionModel() { m_markdownFiles = getMarkdownFileNames(); static_cast<QStringListModel*>(m_completer->model())->setStringList(m_markdownFiles); }
-
 void MainWindow::updateCompleterModel() {
     if (!m_currentVaultPath.isEmpty()) {
         QStringList fileNames;
@@ -547,7 +540,6 @@ void MainWindow::updateCompleterModel() {
             fileNames << fileName;
         }
 
-        // Update the completer model
         QStringListModel *model = new QStringListModel(fileNames, m_completer);
         m_completer->setModel(model);
     }
@@ -560,7 +552,6 @@ void MainWindow::showHelp() {
     QString helpContent;
 
     if (!helpFile.exists()) {
-        // Generate help content if file doesn't exist
         helpContent = "# Guía de Usuario del Markdown Editor\n\n"
                      "## Atajos de Teclado\n"
                      "- `Ctrl+N`: Nuevo archivo\n"
@@ -585,13 +576,11 @@ void MainWindow::showHelp() {
 
                      "¡Disfruta escribiendo tus documentos en Markdown!";
     } else {
-        // Read help content from file
         if (helpFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
             QTextStream in(&helpFile);
             helpContent = in.readAll();
             helpFile.close();
         } else {
-            // Fallback content if file can't be opened
             helpContent = "# Guía de Usuario del Markdown Editor\n\n"
                          "No se pudo leer el archivo de ayuda. Aquí tienes una guía básica:\n\n"
 
@@ -605,15 +594,13 @@ void MainWindow::showHelp() {
         }
     }
 
-    // Show help in a message box or load it in the editor temporarily
     QMessageBox msgBox(this);
     msgBox.setWindowTitle("Ayuda del Editor");
     msgBox.setTextFormat(Qt::RichText);
 
-    // Convert markdown to HTML for display
-    QString htmlContent = m_styler->renderMarkdown(helpContent, font(), m_currentThemeName);
+    QString htmlContent = m_styler->renderMarkdown(helpContent, font());
     msgBox.setText(htmlContent);
-    msgBox.setDetailedText(helpContent);  // Show raw markdown in details
+    msgBox.setDetailedText(helpContent);
     msgBox.exec();
 }
 void MainWindow::showAutoCompletePopup(const QString &prefix) { if (m_completer->completionCount() > 0) { m_completer->setCompletionPrefix(prefix); m_completer->complete(); } }
@@ -627,7 +614,7 @@ void MainWindow::onTextChanged() {
     int bracketPos = prefix.lastIndexOf("[[");
     if (bracketPos != -1) {
         QString completionPrefix = prefix.mid(bracketPos + 2);
-        updateCompleterModel(); // Use the new method to update the completer
+        updateCompleterModel();
         if (!completionPrefix.isEmpty()) showAutoCompletePopup(completionPrefix);
     }
 }
@@ -639,12 +626,10 @@ void MainWindow::applyFormat(const QString &prefix, const QString &suffix) {
     QString selectedText = cursor.selectedText();
 
     if (selectedText.isEmpty()) {
-        // If no text is selected, just insert the format markers and position cursor between them
         cursor.insertText(prefix + suffix);
         cursor.movePosition(QTextCursor::PreviousCharacter, QTextCursor::MoveAnchor, suffix.length());
         m_textEdit->setTextCursor(cursor);
     } else {
-        // If text is selected, wrap it with the format markers
         cursor.insertText(prefix + selectedText + suffix);
     }
 }
@@ -663,30 +648,30 @@ QStringList MainWindow::getAllMarkdownFilesInVault() {
 void MainWindow::onTreeContextMenu(const QPoint &pos) {
     QModelIndex proxyIndex = m_treeView->indexAt(pos);
     if (!proxyIndex.isValid()) return;
-    
+
     QModelIndex sourceIndex = m_proxyModel->mapToSource(proxyIndex);
     if (!sourceIndex.isValid()) return;
-    
+
     QString filePath = m_fileSystemModel->filePath(sourceIndex);
     QFileInfo fileInfo(filePath);
-    
+
     QMenu contextMenu(this);
     if (fileInfo.isFile()) {
         QAction *setDefaultAction = contextMenu.addAction("Establecer como archivo por defecto");
         connect(setDefaultAction, &QAction::triggered, this, [this, filePath]() { m_defaultVaultFile = filePath; });
     }
-    
+
     QAction *renameAction = contextMenu.addAction("Renombrar");
     connect(renameAction, &QAction::triggered, this, [this, sourceIndex]() { showRenameDialog(); });
-    
+
     QAction *deleteAction = contextMenu.addAction("Eliminar");
     connect(deleteAction, &QAction::triggered, this, [this, sourceIndex]() { deleteFileOrFolder(); });
-    
+
     if (m_fileSystemModel->isDir(sourceIndex)) {
         QAction *createFileAction = contextMenu.addAction("Crear archivo .md");
         connect(createFileAction, &QAction::triggered, this, [this, filePath]() { newFile(); });
     }
-    
+
     contextMenu.exec(m_treeView->mapToGlobal(pos));
 }
 
@@ -712,12 +697,12 @@ void MainWindow::showRenameDialog() {
     if (!proxyIndex.isValid()) return;
     QModelIndex sourceIndex = m_proxyModel->mapToSource(proxyIndex);
     if (!sourceIndex.isValid()) return;
-    
+
     QString oldPath = m_fileSystemModel->filePath(sourceIndex);
     QFileInfo fileInfo(oldPath);
     bool ok = false;
     QString newName = QInputDialog::getText(this, "Renombrar", "Nuevo nombre:", QLineEdit::Normal, fileInfo.fileName(), &ok);
-    
+
     if (ok && !newName.isEmpty() && newName != fileInfo.fileName()) {
         QString newPath = fileInfo.absolutePath() + "/" + newName;
         if (QFile::rename(oldPath, newPath)) {
@@ -733,10 +718,10 @@ void MainWindow::deleteFileOrFolder() {
     if (!proxyIndex.isValid()) return;
     QModelIndex sourceIndex = m_proxyModel->mapToSource(proxyIndex);
     if (!sourceIndex.isValid()) return;
-    
+
     QString path = m_fileSystemModel->filePath(sourceIndex);
     auto reply = QMessageBox::question(this, "Eliminar", "¿Estás seguro de eliminar '" + QFileInfo(path).fileName() + "'?", QMessageBox::Yes | QMessageBox::No);
-    
+
     if (reply == QMessageBox::Yes) {
         if (QFileInfo(path).isDir()) {
             QDir(path).removeRecursively();

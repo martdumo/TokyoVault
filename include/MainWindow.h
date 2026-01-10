@@ -47,7 +47,6 @@ private slots:
     void closeVault();
     void showFindReplaceDialog();
     void showFontDialog();
-    void applyTheme(QAction* action);
     void showHelpDialog();
     void showHelp();
     void filterVault();
@@ -113,7 +112,6 @@ private:
     int m_historyIndex;
     FindReplaceDialog *m_findReplaceDialog;
     std::unique_ptr<EditorStyler> m_styler;
-    QString m_currentThemeName;
     QString m_defaultVaultFile;
     QStringList m_markdownFiles;
     QCompleter *m_completer;
