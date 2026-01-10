@@ -4,11 +4,23 @@
 #include <QFile>
 #include <QTextStream>
 #include <QDebug>
+#include <QLocalSocket>
 
 int main(int argc, char *argv[])
 {
     // Punto de entrada principal de la aplicación Qt.
     QApplication app(argc, argv);
+
+    // --- Single Instance Check ---
+    QString serverName = "MarkdownEditor_Instance";
+    QLocalSocket socket;
+    socket.connectToServer(serverName);
+
+    if (socket.waitForConnected(1000)) {
+        // Another instance is already running, exit this one
+        qDebug() << "Another instance is already running. Exiting.";
+        return 0;
+    }
 
     // --- Carga de la fuente personalizada ---
     // Registra la fuente desde el archivo de recursos (previamente definido en resources.qrc).

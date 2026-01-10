@@ -22,7 +22,7 @@ else()
 endif()
 
 # Busca el paquete de Qt6.
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Core)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Core Network)
 
 # Incluye los directorios de cabeceras.
 include_directories(include)
@@ -53,4 +53,5 @@ target_link_libraries(MarkdownEditor PRIVATE
     Qt6::Widgets
     Qt6::Gui
     Qt6::Core
+    Qt6::Network
 )

@@ -63,24 +63,31 @@ QString EditorStyler::renderMarkdown(const QString& markdownContent, const QFont
     // 1. Escape basic HTML characters
     content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 
-    // 2. Refined line spacing
+    // 2. Process headers (H1 to H6)
+    // Process headers from most specific (H6) to least specific (H1) to avoid conflicts
+    content.replace(QRegularExpression(R"(^######\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h6>\1</h6>)");
+    content.replace(QRegularExpression(R"(^#####\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h5>\1</h5>)");
+    content.replace(QRegularExpression(R"(^####\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h4>\1</h4>)");
+    content.replace(QRegularExpression(R"(^###\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h3>\1</h3>)");
+    content.replace(QRegularExpression(R"(^##\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h2>\1</h2>)");
+    content.replace(QRegularExpression(R"(^#\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h1>\1</h1>)");
+
+    // 3. Refined line spacing
     content.replace(QRegularExpression(R"(^\s*$)"), "&nbsp;");
-    
-    // 3. Process block elements
+
+    // 4. Process block elements
     content.replace(QRegularExpression(R"(^>\s+(.*)$)", QRegularExpression::MultilineOption), R"(<blockquote>\1</blockquote>)");
     content.replace(QRegularExpression(R"(^(\s*-\s*){3,}$|^\s*(\*\s*){3,}$)", QRegularExpression::MultilineOption), "<hr>");
-    content.replace(QRegularExpression(R"(^#\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h1>\1</h1>)");
-    content.replace(QRegularExpression(R"(^##\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h2>\1</h2>)");
-    content.replace(QRegularExpression(R"(^###\s+(.*)$)", QRegularExpression::MultilineOption), R"(<h3>\1</h3>)");
 
-    // 4. Process inline elements
+    // 5. Process inline elements
+    // Ensure all anchor tags are properly closed and prevent potential issues with special characters
     content.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"(<a href="\1.md">\1</a>)");
     content.replace(QRegularExpression(R"(\[([^\]]+)\]\(([^)]+)\))"), R"(<a href="\2">\1</a>)");
     content.replace(QRegularExpression(R"(\*\*(.*?)\*\*)"), R"(<b>\1</b>)");
     content.replace(QRegularExpression(R"(\*(.*?)\*)"), R"(<i>\1</i>)");
     content.replace(QRegularExpression(R"(`(.*?)`)"), R"(<code>\1</code>)");
 
-    // 5. Build CSS string in chunks to avoid C2026
+    // 6. Build CSS string in chunks to avoid C2026
     QString css;
     css += "body { white-space: pre-wrap; font-family: '" + editorFont.family() + "'; background-color: " + currentTheme.windowBg.name() + "; color: " + currentTheme.textFg.name() + "; }";
     css += "h1, h2, h3, h4, h5, h6 { color: " + currentTheme.heading.name() + "; }";
@@ -90,8 +97,8 @@ QString EditorStyler::renderMarkdown(const QString& markdownContent, const QFont
     css += "pre { background-color: " + currentTheme.quoteBg.name() + "; color: " + currentTheme.code.name() + "; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre; }";
     css += "hr { border: 0; border-top: 1px solid " + currentTheme.heading.name() + "; margin: 1em 0; }";
     css += "img { max-width: 100%; }";
-    
-    // 6. Wrap in HTML with dynamic, centralized CSS
+
+    // 7. Wrap in HTML with dynamic, centralized CSS
     QString htmlTemplate = QString("<!DOCTYPE html><html><head><style>%1</style></head><body>%2</body></html>");
     QString finalHtml = htmlTemplate.arg(css).arg(content);
 

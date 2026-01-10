@@ -44,7 +44,7 @@
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
-      m_isEditMode(true),
+      m_isEditMode(false),
       m_historyIndex(-1),
       m_searchThread(nullptr),
       m_searchWorker(nullptr),
@@ -301,12 +301,16 @@ bool MainWindow::loadFile(const QString& fp,bool addHist){
     QTextStream in(&f);
     m_rawMarkdownBuffer=in.readAll();
     f.close();
-    m_isEditMode = true;
-    m_textEdit->setReadOnly(false);
-    m_highlighter->setDocument(m_textEdit->document());
-    m_textEdit->setPlainText(m_rawMarkdownBuffer);
-    m_highlighter->rehighlight();
-    m_toggleButton->setText("Preview Mode");
+    m_textEdit->setReadOnly(!m_isEditMode);
+    m_highlighter->setDocument(m_isEditMode ? m_textEdit->document() : nullptr);
+    if (m_isEditMode) {
+        m_textEdit->setPlainText(m_rawMarkdownBuffer);
+        m_highlighter->rehighlight();
+    } else {
+        QString html = m_styler->renderMarkdown(m_rawMarkdownBuffer, m_textEdit->font(), m_currentThemeName);
+        m_textEdit->setHtml(html);
+    }
+    m_toggleButton->setText(m_isEditMode ? "Preview Mode" : "Edit Mode");
     m_textEdit->document()->setModified(false);
     setWindowTitle(QFileInfo(fp).fileName()+" - ME[*]");
     updateStatusBar();
