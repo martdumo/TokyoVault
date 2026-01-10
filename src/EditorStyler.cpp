@@ -79,10 +79,62 @@ QString EditorStyler::renderMarkdown(const QString& markdownContent, const QFont
     content.replace(QRegularExpression(R"(^>\s+(.*)$)", QRegularExpression::MultilineOption), R"(<blockquote>\1</blockquote>)");
     content.replace(QRegularExpression(R"(^(\s*-\s*){3,}$|^\s*(\*\s*){3,}$)", QRegularExpression::MultilineOption), "<hr>");
 
-    // 5. Process inline elements
+    // 5. Process tables
+    // Split content into lines to process tables
+    QStringList lines = content.split("\n");
+    QStringList processedLines;
+    bool inTable = false;
+
+    for (const QString& line : lines) {
+        if (line.trimmed().startsWith("|") && line.contains("|")) {
+            // This is a table row
+            if (!inTable) {
+                // Start of table
+                inTable = true;
+                processedLines << QString("<table style=\"border-collapse: collapse; width: 100%; margin: 10px 0; border: 1px solid %1;\">").arg(currentTheme.mutedFg.name());
+            }
+
+            // Process table row - skip separator rows (contain ---)
+            if (line.contains("---|") || line.contains("|---") || line.contains(":---")) {
+                continue; // Skip the separator row
+            } else {
+                // Regular table row
+                QStringList cells = line.split("|");
+                QString tableRow = "<tr>";
+                for (int i = 1; i < cells.size() - 1; ++i) { // Skip first and last empty elements
+                    QString cellContent = cells[i].trimmed();
+                    tableRow += QString("<td style=\"border: 1px solid %1; padding: 8px; text-align: left;\">%2</td>").arg(currentTheme.mutedFg.name()).arg(cellContent);
+                }
+                tableRow += "</tr>";
+                processedLines << tableRow;
+            }
+        } else {
+            // Not a table line
+            if (inTable) {
+                // End of table
+                inTable = false;
+                processedLines << "</table>";
+            }
+            processedLines << line;
+        }
+    }
+
+    if (inTable) {
+        // Close table if it wasn't closed
+        processedLines << "</table>";
+    }
+
+    content = processedLines.join("\n");
+
+    // 6. Process inline elements
     // Ensure all anchor tags are properly closed and prevent potential issues with special characters
-    content.replace(QRegularExpression(R"(\[\[([^\]]+)\]\])"), R"(<a href="\1.md">\1</a>)");
-    content.replace(QRegularExpression(R"(\[([^\]]+)\]\(([^)]+)\))"), R"(<a href="\2">\1</a>)");
+    // Use non-greedy quantifiers to avoid capturing too much text
+    content.replace(QRegularExpression(R"(\[\[([^\]]+?)\]\])"), R"(<a href="\1.md">\1</a>)");
+    content.replace(QRegularExpression(R"(\[([^\]]+?)\]\(([^\)]+?)\))"), R"(<a href="\2">\1</a>)");
+
+    // Add support for images: ![alt text](image_url)
+    content.replace(QRegularExpression(R"(!\[([^\]]+?)\]\(([^\)]+?)\))"), R"(<img src="\2" alt="\1" style="max-width:100%; height:auto; display:block; margin:10px 0; border-radius:4px;" />)");
+
     content.replace(QRegularExpression(R"(\*\*(.*?)\*\*)"), R"(<b>\1</b>)");
     content.replace(QRegularExpression(R"(\*(.*?)\*)"), R"(<i>\1</i>)");
     content.replace(QRegularExpression(R"(`(.*?)`)"), R"(<code>\1</code>)");

@@ -141,6 +141,10 @@ void MainWindow::createMenus()
     QAction *guideAction = new QAction("&Guía de Markdown", this);
     connect(guideAction, &QAction::triggered, this, &MainWindow::showHelpDialog);
     helpMenu->addAction(guideAction);
+
+    QAction *helpAction = new QAction("&Ayuda Real", this);
+    connect(helpAction, &QAction::triggered, this, &MainWindow::showHelp);
+    helpMenu->addAction(helpAction);
 }
 
 void MainWindow::createToolBar()
@@ -392,6 +396,7 @@ void MainWindow::toggleEditMode()
         m_textEdit->setHtml(html);
     }
     m_textEdit->document()->setModified(wasModified);
+    updateStatusBar(); // Update status bar when toggling modes
 }
 
 void MainWindow::filterVault() { m_searchTimer->start(); }
@@ -520,11 +525,112 @@ void MainWindow::loadSettings() {
 }
 
 void MainWindow::setupAutoCompletion() { m_completer = new QCompleter(this); m_completer->setModel(new QStringListModel(m_markdownFiles, m_completer)); m_completer->setCaseSensitivity(Qt::CaseInsensitive); m_completer->setCompletionMode(QCompleter::PopupCompletion); m_completer->setWidget(m_textEdit); connect(m_completer, QOverload<const QString &>::of(&QCompleter::activated), this, &MainWindow::insertCompletion); }
-void MainWindow::insertCompletion(const QString &completion) { if (m_completer->widget() != m_textEdit) return; QTextCursor tc = m_textEdit->textCursor(); int extra = completion.length() - m_completer->completionPrefix().length(); tc.movePosition(QTextCursor::Left); tc.movePosition(QTextCursor::EndOfWord); tc.insertText(completion.right(extra)); m_textEdit->setTextCursor(tc); }
+void MainWindow::insertCompletion(const QString &completion) {
+    if (m_completer->widget() != m_textEdit) return;
+    QTextCursor tc = m_textEdit->textCursor();
+    int extra = completion.length() - m_completer->completionPrefix().length();
+    tc.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor, m_completer->completionPrefix().length());
+    tc.movePosition(QTextCursor::EndOfWord);
+    tc.insertText(completion.right(extra) + "]]"); // Add closing brackets
+    m_textEdit->setTextCursor(tc);
+}
 QStringList MainWindow::getMarkdownFileNames() { QStringList fileNames; if (!m_currentVaultPath.isEmpty()) { QDirIterator it(m_currentVaultPath, QStringList() << "*.md", QDir::Files, QDirIterator::Subdirectories); while (it.hasNext()) { fileNames << QFileInfo(it.next()).baseName(); } } return fileNames; }
 void MainWindow::updateAutoCompletionModel() { m_markdownFiles = getMarkdownFileNames(); static_cast<QStringListModel*>(m_completer->model())->setStringList(m_markdownFiles); }
+
+void MainWindow::updateCompleterModel() {
+    if (!m_currentVaultPath.isEmpty()) {
+        QStringList fileNames;
+        QDirIterator it(m_currentVaultPath, QStringList() << "*.md", QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            QString filePath = it.next();
+            QString fileName = QFileInfo(filePath).baseName();
+            fileNames << fileName;
+        }
+
+        // Update the completer model
+        QStringListModel *model = new QStringListModel(fileNames, m_completer);
+        m_completer->setModel(model);
+    }
+}
+
+void MainWindow::showHelp() {
+    QString helpFilePath = "assets/help.md";
+    QFile helpFile(helpFilePath);
+
+    QString helpContent;
+
+    if (!helpFile.exists()) {
+        // Generate help content if file doesn't exist
+        helpContent = "# Guía de Usuario del Markdown Editor\n\n"
+                     "## Atajos de Teclado\n"
+                     "- `Ctrl+N`: Nuevo archivo\n"
+                     "- `Ctrl+O`: Abrir archivo\n"
+                     "- `Ctrl+S`: Guardar archivo\n"
+                     "- `Ctrl+E`: Cambiar entre modo edición y vista previa\n"
+                     "- `Ctrl+F`: Buscar y reemplazar\n"
+                     "- `Ctrl++`: Acercar zoom\n"
+                     "- `Ctrl+-`: Alejar zoom\n\n"
+
+                     "## Funcionalidades\n"
+                     "- **Wiki-links**: Escribe `[[nombre]]` para crear enlaces internos\n"
+                     "- **Formato**: Usa `**negrita**`, `*cursiva*`, y `` `código` ``\n"
+                     "- **Encabezados**: Usa `# H1`, `## H2`, ..., `###### H6`\n"
+                     "- **Imágenes**: Inserta con `![alt text](ruta_imagen)`\n"
+                     "- **Tablas**: Crea tablas con el formato `| col1 | col2 |`\n\n"
+
+                     "## Navegación\n"
+                     "- Haz clic en los archivos del vault para abrirlos\n"
+                     "- Usa los botones de navegación para moverte entre archivos recientes\n"
+                     "- Mantén presionado `Ctrl` y haz clic en un wiki-link para navegar\n\n"
+
+                     "¡Disfruta escribiendo tus documentos en Markdown!";
+    } else {
+        // Read help content from file
+        if (helpFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&helpFile);
+            helpContent = in.readAll();
+            helpFile.close();
+        } else {
+            // Fallback content if file can't be opened
+            helpContent = "# Guía de Usuario del Markdown Editor\n\n"
+                         "No se pudo leer el archivo de ayuda. Aquí tienes una guía básica:\n\n"
+
+                         "## Atajos de Teclado\n"
+                         "- `Ctrl+E`: Cambiar entre modo edición y vista previa\n"
+                         "- `Ctrl+F`: Buscar y reemplazar\n\n"
+
+                         "## Funcionalidades\n"
+                         "- **Wiki-links**: Escribe `[[nombre]]` para crear enlaces internos\n"
+                         "- **Formato**: Usa `**negrita**`, `*cursiva*`, y `` `código` ``\n";
+        }
+    }
+
+    // Show help in a message box or load it in the editor temporarily
+    QMessageBox msgBox(this);
+    msgBox.setWindowTitle("Ayuda del Editor");
+    msgBox.setTextFormat(Qt::RichText);
+
+    // Convert markdown to HTML for display
+    QString htmlContent = m_styler->renderMarkdown(helpContent, font(), m_currentThemeName);
+    msgBox.setText(htmlContent);
+    msgBox.setDetailedText(helpContent);  // Show raw markdown in details
+    msgBox.exec();
+}
 void MainWindow::showAutoCompletePopup(const QString &prefix) { if (m_completer->completionCount() > 0) { m_completer->setCompletionPrefix(prefix); m_completer->complete(); } }
-void MainWindow::onTextChanged() { if (!m_isEditMode) return; QTextCursor cursor = m_textEdit->textCursor(); int pos = cursor.position(); QString text = m_textEdit->toPlainText(); if (pos <= 0 || pos > text.length()) return; QString prefix = text.left(pos); int bracketPos = prefix.lastIndexOf("[["); if (bracketPos != -1) { QString completionPrefix = prefix.mid(bracketPos + 2); updateAutoCompletionModel(); if (!completionPrefix.isEmpty()) showAutoCompletePopup(completionPrefix); } }
+void MainWindow::onTextChanged() {
+    if (!m_isEditMode) return;
+    QTextCursor cursor = m_textEdit->textCursor();
+    int pos = cursor.position();
+    QString text = m_textEdit->toPlainText();
+    if (pos <= 0 || pos > text.length()) return;
+    QString prefix = text.left(pos);
+    int bracketPos = prefix.lastIndexOf("[[");
+    if (bracketPos != -1) {
+        QString completionPrefix = prefix.mid(bracketPos + 2);
+        updateCompleterModel(); // Use the new method to update the completer
+        if (!completionPrefix.isEmpty()) showAutoCompletePopup(completionPrefix);
+    }
+}
 
 void MainWindow::applyFormat(const QString &prefix, const QString &suffix) {
     if (!m_isEditMode) return;

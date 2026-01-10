@@ -49,6 +49,7 @@ private slots:
     void showFontDialog();
     void applyTheme(QAction* action);
     void showHelpDialog();
+    void showHelp();
     void filterVault();
     void startContentSearch();
     void handleSearchResults(const QStringList &matchingFiles);
@@ -82,6 +83,7 @@ private:
     bool maybeSave();
     void setupAutoCompletion();
     void updateAutoCompletionModel();
+    void updateCompleterModel();
     QStringList getMarkdownFileNames();
     QString findFileInVault(const QString &fileName);
     QStringList getAllMarkdownFilesInVault();
