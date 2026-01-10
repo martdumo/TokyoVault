@@ -334,6 +334,9 @@ bool MainWindow::loadFile(const QString& fp,bool addHist){
     if (m_isEditMode) {
         m_textEdit->setPlainText(m_rawMarkdownBuffer);
         m_highlighter->rehighlight();
+        // Reset character format to ensure a clean slate when loading in edit mode
+        m_textEdit->setCurrentCharFormat(QTextCharFormat());
+        m_textEdit->document()->setDefaultFont(m_textEdit->font());
     } else {
         QString html = m_styler->renderMarkdown(m_rawMarkdownBuffer, m_textEdit->font());
         m_textEdit->setHtml(html);
@@ -387,6 +390,9 @@ void MainWindow::toggleEditMode()
         m_toggleButton->setText("Preview Mode");
         m_textEdit->setReadOnly(false);
         m_highlighter->setDocument(m_textEdit->document());
+        // Reset character format to neutral and ensure correct font when returning to edit mode
+        m_textEdit->setCurrentCharFormat(QTextCharFormat());
+        m_textEdit->document()->setDefaultFont(m_textEdit->font());
         m_textEdit->setPlainText(m_rawMarkdownBuffer);
         m_highlighter->rehighlight();
     } else {
