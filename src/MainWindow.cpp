@@ -51,6 +51,7 @@ MainWindow::MainWindow(QWidget *parent)
       m_searchTimer(nullptr),
       m_findReplaceDialog(nullptr)
 {
+    setWindowIcon(QIcon(":/assets/icons/app.ico"));
     setWindowTitle("Markdown Editor [*]");
     setMinimumSize(900, 700);
     resize(1400, 900);
@@ -67,7 +68,7 @@ MainWindow::MainWindow(QWidget *parent)
         "QTreeView{background-color:#1a1b26;color:#c0caf5;border:none;}"
         "QLineEdit{background-color:#24283b;color:#c0caf5;border:1px solid #565f89;border-radius:4px;padding:4px;}"
         "QTextEdit{background-color:#24283b;color:#c0caf5;border:none;margin-left:25px;padding-top:10px;}"
-        "QTextEdit a{color:#7aa2f7;text-decoration:underline;}"
+        "QTextEdit a{color:#7aa2f7;text-decoration:none;}"
         "QScrollBar:vertical{background:#1a1b26;width:10px;margin:0;}"
         "QScrollBar::handle:vertical{background:#565f89;min-height:20px;border-radius:5px;}"
     );
@@ -82,6 +83,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupSearchThread();
 
     new QShortcut(QKeySequence("Ctrl+E"), this, SLOT(toggleEditMode()));
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_3), this, SLOT(toggleEditMode()));
     setupAutoCompletion();
     connect(m_textEdit, &QTextEdit::textChanged, this, &MainWindow::onTextChanged);
     loadSettings();
@@ -473,14 +475,14 @@ void MainWindow::handleLinkNavigation(const QString &link) {
     if (finalLink.contains("://")) { QDesktopServices::openUrl(QUrl(finalLink)); return; }
     if (m_currentVaultPath.isEmpty()) return;
     QString filePath = findFileInVault(finalLink);
-    if (!filePath.isEmpty()) { if (maybeSave()) loadFile(filePath); }
+    if (!filePath.isEmpty()) { if (maybeSave()) loadFile(filePath); } 
     else {
         QString newFilePath = finalLink.endsWith(".md") ? m_currentVaultPath + "/" + finalLink : m_currentVaultPath + "/" + finalLink + ".md";
         auto reply = QMessageBox::question(this, "Crear archivo", "El archivo '" + QFileInfo(newFilePath).fileName() + "' no existe.\n¿Quieres crearlo?", QMessageBox::Yes | QMessageBox::No);
         if (reply == QMessageBox::Yes) {
             if (!maybeSave()) return;
             QFile file(newFilePath);
-            if (file.open(QIODevice::WriteOnly)) { file.close(); loadFile(newFilePath); }
+            if (file.open(QIODevice::WriteOnly)) { file.close(); loadFile(newFilePath); } 
             else { QMessageBox::warning(this, "Error", "No se pudo crear el archivo."); }
         }
     }
@@ -531,7 +533,7 @@ void MainWindow::insertCompletion(const QString &completion) {
     int extra = completion.length() - m_completer->completionPrefix().length();
     tc.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor, m_completer->completionPrefix().length());
     tc.movePosition(QTextCursor::EndOfWord);
-    tc.insertText(completion.right(extra) + "]]");
+    tc.insertText(completion.right(extra) + "]]" );
     m_textEdit->setTextCursor(tc);
 }
 QStringList MainWindow::getMarkdownFileNames() { QStringList fileNames; if (!m_currentVaultPath.isEmpty()) { QDirIterator it(m_currentVaultPath, QStringList() << "*.md", QDir::Files, QDirIterator::Subdirectories); while (it.hasNext()) { fileNames << QFileInfo(it.next()).baseName(); } } return fileNames; }

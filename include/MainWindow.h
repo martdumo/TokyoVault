@@ -24,6 +24,7 @@ class FindReplaceDialog;
 class SearchWorker;
 class QCompleter;
 class EditorStyler;
+class QShortcut;
 
 class MainWindow : public QMainWindow
 {
@@ -115,4 +116,5 @@ private:
     QString m_defaultVaultFile;
     QStringList m_markdownFiles;
     QCompleter *m_completer;
+    QShortcut* m_toggleModeShortcut;
 };

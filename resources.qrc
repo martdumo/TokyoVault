@@ -1,6 +1,6 @@
 <!DOCTYPE RCC><RCC version="1.0">
 <qresource prefix="/">
-    <file alias="style.qss">style.qss</file>
-    <file alias="fonts/JetBrainsMono-Regular.ttf">assets/fonts/JetBrainsMono-Regular.ttf</file>
+    <file>assets/icons/app.ico</file>
+    <file>assets/icons/logo.png</file>
 </qresource>
 </RCC>
