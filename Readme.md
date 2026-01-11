@@ -65,6 +65,8 @@ Una de las principales motivaciones de este proyecto fue superar las limitacione
 El proyecto utiliza **CMake** como sistema de construcción, lo que garantiza una portabilidad fluida entre Windows y Linux.
 
 ### 🪟 Windows 11 (MSVC 2022)
+Descargar instalador desde Releases o bien:
+
 1. Instalar dependencias mediante **vcpkg**: `vcpkg integrate install`.
 2. Abrir la carpeta raíz en **Visual Studio 2022**.
 3. Configurar el perfil de CMake como `x64-Release`.
