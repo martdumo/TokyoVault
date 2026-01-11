@@ -16,8 +16,8 @@ El modo lectura ofrece una paridad visual 1:1 con el editor, utilizando el tema 
 Resaltado de sintaxis dinámico sin subrayados molestos, permitiendo una escritura limpia y enfocada.
 ![TokyoVault Editor](2.jpg)
 
-### 3. Gestión de Vault y Temas
-Navegación fluida por carpetas, búsqueda asíncrona y personalización total de temas y fuentes.
+### 3. Gestión de Vault
+Navegación fluida por carpetas, búsqueda asíncrona y personalización total de fuentes.
 ![TokyoVault Vault Management](3.jpg)
 
 
@@ -38,7 +38,7 @@ El proyecto sigue una arquitectura **Modular y Orientada a Objetos**, priorizand
 ### 🧩 Desglose de Componentes
 
 1.  **MainWindow (Orquestador):** Actúa como el controlador central del sistema. Gestiona el ciclo de vida de los widgets, la persistencia de configuraciones vía `QSettings` y la coordinación de los flujos de archivos.
-2.  **EditorStyler (Motor de Estilo):** Clase desacoplada encargada de la "fábrica de temas" y el procesado de Markdown. Implementa un sistema de inyección dinámica de **QSS (Qt Style Sheets)** que asegura la coherencia visual en todos los niveles de la jerarquía de widgets.
+2.  **EditorStyler (Motor de Estilo):** Clase desacoplada encargada del procesado de Markdown. Implementa un sistema de inyección dinámica de **QSS (Qt Style Sheets)** que asegura la coherencia visual en todos los niveles de la jerarquía de widgets.
 3.  **MarkdownTextEdit (Motor de Eventos):** Una subclase avanzada de `QTextEdit` que gestiona eventos de bajo nivel (`wheelEvent`, `mousePressEvent`). Implementa un **Cargador de Recursos** personalizado (`loadResource`) para la gestión eficiente de imágenes locales y remotas.
 4.  **SearchWorker (Procesamiento Asíncrono):** Para evitar bloqueos en el hilo principal de la interfaz (GUI Thread), la búsqueda global se delega a un trabajador que opera en un `QThread` independiente, utilizando señales y slots para la comunicación inter-hilos.
 
