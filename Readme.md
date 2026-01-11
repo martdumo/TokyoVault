@@ -1,8 +1,25 @@
 # 🧳 Markdown Editor "Maletín" (Native C++ Edition)
 
+
 ![C++](https://img.shields.io/badge/C++-20-blue?style=for-the-badge&logo=c%2B%2B) ![Qt](https://img.shields.io/badge/Qt-6.10-41CD52?style=for-the-badge&logo=qt) ![CMake](https://img.shields.io/badge/CMake-Build-064F8C?style=for-the-badge&logo=cmake) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Arch%20Linux-lightgrey?style=for-the-badge)
 
 **"Maletín"** es un gestor de notas y bóveda personal (Personal Vault) diseñado bajo la premisa de **Alto Rendimiento** y **Fidelidad Visual**. A diferencia de las soluciones basadas en Electron (como Obsidian), este editor ha sido desarrollado nativamente en C++ para ofrecer una latencia cercana a cero y un consumo de recursos mínimo.
+
+
+## 📸 Capturas de Pantalla
+
+### 1. Interfaz Principal (Modo Preview)
+El modo lectura ofrece una paridad visual 1:1 con el editor, utilizando el tema Tokyo Night y respetando cada espacio vertical.
+![TokyoVault Preview](1.jpg)
+
+### 2. Modo Edición (Sincronizado)
+Resaltado de sintaxis dinámico sin subrayados molestos, permitiendo una escritura limpia y enfocada.
+![TokyoVault Editor](2.jpg)
+
+### 3. Gestión de Vault y Temas
+Navegación fluida por carpetas, búsqueda asíncrona y personalización total de temas y fuentes.
+![TokyoVault Vault Management](3.jpg)
+
 
 ## 🌟 Características Principales
 
