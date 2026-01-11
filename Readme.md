@@ -105,15 +105,15 @@ Este proyecto ha sido desarrollado utilizando técnicas avanzadas de **IA-Assist
 
 ## 🚀 Roadmap de Futuras Implementaciones
 
-- [ ] **Soporte CommonMark Completo:** Integración de la librería `md4c` para soporte total de tablas anidadas y listas complejas.
-- [ ] **Cloud Sync:** Sincronización automática de bóvedas mediante protocolos cifrados.
-- [ ] **Plugin System:** Arquitectura de micro-kernel para permitir extensiones desarrolladas por la comunidad.
+**Soporte CommonMark Completo:** Integración de la librería `md4c` para soporte total de tablas anidadas y listas complejas.
+**Cloud Sync:** Sincronización automática de bóvedas mediante protocolos cifrados.
+**Plugin System:** Arquitectura de micro-kernel para permitir extensiones desarrolladas por la comunidad.
 
 ## ✍️ Autor
 
-Desarrollado con pasión por **Quicksilver** (martdumo). 
+Desarrollado con pasión por Martín Dumont /martdumo. 
 
 Si eres un reclutador o un desarrollador interesado en sistemas nativos de alto rendimiento, no dudes en contactarme o revisar mi historial de commits para ver la evolución técnica de este editor.
-
+License: MIT
 ---
 *Este proyecto es una prueba de que la simbiosis entre un desarrollador creativo y la Inteligencia Artificial puede producir software nativo de alta calidad en tiempo récord.*
