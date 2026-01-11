@@ -1,9 +1,9 @@
-# 🧳 Markdown Editor "Maletín" (Native C++ Edition)
+# 🧳 Markdown Editor "TokyoVault" (Native C++ Edition)
 
 
 ![C++](https://img.shields.io/badge/C++-20-blue?style=for-the-badge&logo=c%2B%2B) ![Qt](https://img.shields.io/badge/Qt-6.10-41CD52?style=for-the-badge&logo=qt) ![CMake](https://img.shields.io/badge/CMake-Build-064F8C?style=for-the-badge&logo=cmake) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Arch%20Linux-lightgrey?style=for-the-badge)
 
-**"Maletín"** es un gestor de notas y bóveda personal (Personal Vault) diseñado bajo la premisa de **Alto Rendimiento** y **Fidelidad Visual**. A diferencia de las soluciones basadas en Electron (como Obsidian), este editor ha sido desarrollado nativamente en C++ para ofrecer una latencia cercana a cero y un consumo de recursos mínimo.
+**"TokyoVault"** es un gestor de notas y bóveda personal (Personal Vault) diseñado bajo la premisa de **Alto Rendimiento** y **Fidelidad Visual**. A diferencia de las soluciones basadas en Electron (como Obsidian), este editor ha sido desarrollado nativamente en C++ para ofrecer una latencia cercana a cero y un consumo de recursos mínimo.
 
 
 ## 📸 Capturas de Pantalla
@@ -54,7 +54,7 @@ El proyecto sigue una arquitectura **Modular y Orientada a Objetos**, priorizand
 
 Una de las principales motivaciones de este proyecto fue superar las limitaciones de consumo de los editores basados en la pila Web (Electron).
 
-| Métrica | Obsidian (Electron) | **Maletín (C++)** | Mejora |
+| Métrica | Obsidian (Electron) | **TokyoVault (C++)** | Mejora |
 | :--- | :--- | :--- | :--- |
 | **Uso de RAM (Idle)** | ~400 MB - 1 GB | **40 MB - 60 MB** | ~10x menos |
 | **Peso del Binario** | ~300 MB | **87 MB** (Portable) | ~3.5x menos |
